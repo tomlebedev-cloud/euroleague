@@ -1,0 +1,123 @@
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --text: #1b1d22;
+  --muted: #6b7180;
+  --border: #e3e5ea;
+  --accent: #f26b1d;
+  --win: #1f9d55;
+  --loss: #d64545;
+  --head: #14161b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121418;
+    --card: #1b1e24;
+    --text: #e8eaee;
+    --muted: #9aa1ad;
+    --border: #2a2e36;
+    --head: #0b0c0f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+a { color: inherit; }
+
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+
+/* ---------- Header ---------- */
+header { background: var(--head); color: #fff; position: sticky; top: 0; z-index: 10; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
+.logo { font-weight: 800; font-size: 1.15rem; text-decoration: none; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav a { text-decoration: none; padding: 6px 10px; border-radius: 6px; font-size: .95rem; color: #c9ccd3; }
+nav a:hover { color: #fff; background: rgba(255,255,255,.08); }
+nav a.active { color: #fff; background: var(--accent); }
+
+main { padding-top: 24px; padding-bottom: 24px; }
+footer { color: var(--muted); font-size: .85rem; padding-bottom: 32px; }
+
+h1 { font-size: 1.6rem; margin: 0 0 16px; }
+h2 { font-size: 1.15rem; margin: 0 0 12px; }
+
+/* ---------- Cards & grids ---------- */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.team-card { display: flex; align-items: center; gap: 12px; text-decoration: none; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.team-card:hover { border-color: var(--accent); }
+.team-card small { color: var(--muted); display: block; }
+
+.badge { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; color: #fff; font-size: .7rem; font-weight: 800; flex-shrink: 0; text-shadow: 0 0 2px rgba(0,0,0,.6); }
+.badge.sm { width: 24px; height: 24px; font-size: .55rem; }
+
+/* ---------- Tables ---------- */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover, th.sorted { color: var(--accent); }
+th:first-child, td:first-child, .left { text-align: left; }
+tr:last-child td { border-bottom: none; }
+.team-cell { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+.team-cell:hover { text-decoration: underline; }
+.playoff td:first-child { box-shadow: inset 3px 0 0 var(--win); }
+.playin td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.pos { color: var(--muted); }
+.plus { color: var(--win); }
+.minus { color: var(--loss); }
+.legend { font-size: .8rem; color: var(--muted); margin-top: 10px; display: flex; gap: 16px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; vertical-align: -1px; }
+.legend .l-po::before { background: var(--win); }
+.legend .l-pi::before { background: var(--accent); }
+
+.form { display: inline-flex; gap: 3px; }
+.form b { width: 18px; height: 18px; border-radius: 4px; font-size: .65rem; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.form .W { background: var(--win); }
+.form .L { background: var(--loss); }
+
+/* ---------- Games ---------- */
+.game { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); text-decoration: none; }
+.game:last-child { border-bottom: none; }
+.game:hover .score { color: var(--accent); }
+.game .side { display: flex; align-items: center; gap: 8px; }
+.game .side.away { justify-content: flex-end; text-align: right; }
+.game .score { font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; min-width: 90px; }
+.game .score small { display: block; font-weight: 400; color: var(--muted); font-size: .75rem; }
+.winner { font-weight: 700; }
+.loser { color: var(--muted); }
+
+.round-title { font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 4px 0; }
+
+/* ---------- Controls ---------- */
+.controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+select, button { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .4; cursor: default; }
+
+/* ---------- Game page / predictions ---------- */
+.scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; text-align: center; gap: 12px; }
+.scoreboard .big { font-size: 2.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.scoreboard .badge { width: 56px; height: 56px; font-size: .9rem; margin-bottom: 6px; }
+.muted { color: var(--muted); }
+
+.prob-bar { display: flex; height: 26px; border-radius: 6px; overflow: hidden; font-size: .78rem; font-weight: 700; color: #fff; margin: 8px 0; }
+.prob-bar div { display: flex; align-items: center; padding: 0 8px; min-width: 40px; text-shadow: 0 0 2px rgba(0,0,0,.6); }
+.prob-bar div:last-child { justify-content: flex-end; }
+
+.pick { font-size: .8rem; padding: 2px 8px; border-radius: 99px; background: var(--accent); color: #fff; }
+.note { font-size: .85rem; color: var(--muted); }
