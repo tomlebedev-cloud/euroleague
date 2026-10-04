@@ -54,17 +54,35 @@ summer off-season). If that happens, re-enable it from the Actions tab.
 
 ## How predictions work
 
-For each team the site uses average points scored and allowed per game. Early in the season those
-averages are pulled toward the league average (as if every team had also played 2 average games), so
-one big win doesn't skew everything. For a game:
+The model lives in `model.py` and runs inside `update_data.py`; the website only reads its output.
 
-```
-home score = (home points scored + away points allowed) / 2 + 1.5
-away score = (away points scored + home points allowed) / 2 - 1.5
-```
+- **Attack and defence ratings.** Each team gets an attack rating (points scored vs. an average team) and a
+  defence rating (points allowed), estimated from all games with a weighted ridge regression, so they are
+  **adjusted for opponent strength**. Recent games count more (a game 240 days old counts half).
+- **Preseason starting point.** Ratings begin at 85% of last season's level, adjusted for **summer
+  transfers**: the last-season EuroLeague PIR of players who arrived minus players who left
+  (2 points per 1000 PIR). This starting point is worth about 30 games of evidence, so early-season
+  predictions lean on it and this season's results gradually take over.
+- **Game prediction.** Predicted score = league average + attack + opponent's defence, with +3 points for
+  the home team (none at the Final Four). The margin becomes a win chance with a logistic curve.
 
-That gives a 3-point home advantage. The predicted margin is turned into a win probability with a
-logistic curve (a 10-point favourite wins about 84% of the time). Settings are at the top of `js/app.js`.
+### Accuracy (backtested)
+
+`backtest.py` replays past seasons game by game, predicting each game using only earlier games:
+
+| 2023-24 → 2025-26 (1,063 games) | Winner right | Log loss | Brier | Margin error |
+|---|---|---|---|---|
+| Always pick the home team | 63.4% | | | |
+| Old model (season points per game) | 65.4% | 0.627 | 0.219 | 9.3 pts |
+| **Current model** | **66.8%** | **0.605** | **0.210** | **9.0 pts** |
+
+Lower log loss / Brier means better win probabilities. The biggest gain is early in the season
+(first 80 games of 2025-26: 55% → 61% winners right). Rating settings were tuned on 2023-24 and 2024-25 and
+checked on 2025-26; the probability scale was fitted on all three seasons, since one season alone gave an
+unstable value. Run `python backtest.py` to reproduce, `python backtest.py --tune` to search settings.
+
+The site also shows the model's live track record for the current season, and on every finished game
+what it predicted before tip-off.
 
 Standings are sorted by wins, then point difference. The official EuroLeague tie-breaker (head-to-head)
 can differ when teams are level.
@@ -74,9 +92,11 @@ can differ when teams are level.
 ```
 index.html       page layout and navigation
 css/style.css    styles (light + dark mode)
-js/app.js        pages, standings, stats and prediction logic
+js/app.js        pages, standings and stats
 js/data.js       generated data — don't edit by hand
 update_data.py   downloads data from the EuroLeague API
+model.py         prediction model
+backtest.py      measures prediction accuracy on past seasons
 ```
 
 Not affiliated with EuroLeague Basketball. Data and team logos belong to their owners.

@@ -19,6 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
+import model
+
 SEASON_CODE = sys.argv[1] if len(sys.argv) > 1 else "E2026"
 API = f"https://api-live.euroleague.net/v2/competitions/E/seasons/{SEASON_CODE}"
 OUT = Path(__file__).parent / "js" / "data.js"
@@ -104,6 +106,8 @@ def main():
                         "nat": (person.get("country") or {}).get("code", ""),
                     }
 
+    roster = {code: set(t["players"]) for code, t in teams.items()}  # current squads, for the model
+
     # ---- Games ----
     raw_games = sorted(get("/games")["data"], key=lambda g: (g["round"], g["utcDate"]))
     played = [g for g in raw_games if g["played"]]
@@ -129,6 +133,8 @@ def main():
             "away": away,
             "score": None,
         }
+        if g["phaseType"]["code"] == "FF" or g.get("isNeutralVenue"):
+            game["neutral"] = True
         if g["played"]:
             game["score"] = [g["local"]["score"], g["road"]["score"]]
             game["quarters"] = [
@@ -174,6 +180,25 @@ def main():
                 pl[k] = round(t[k] / gp, 1) if gp else 0
         team["players"] = sorted(team["players"].values(), key=lambda p: (-p["gp"], -p["pts"], p["name"]))
 
+    # ---- Prediction model (see model.py) ----
+    print("  fitting prediction model...")
+    prior = model.preseason_prior(SEASON_CODE, roster)
+    model_games = model.simplify_games(raw_games)
+    by_code = {g["code"]: g for g in games}
+    record = [0, 0]
+    for raw in raw_games:
+        if not raw["played"]:
+            continue
+        # what the model would have said before this game (only earlier games known)
+        day = model.parse_date(raw["utcDate"]).replace(hour=0, minute=0)
+        r = model.fit(model_games, teams, prior, as_of=day)
+        hp, ap, p = r.predict(raw["local"]["club"]["code"], raw["road"]["club"]["code"], by_code[raw["gameCode"]].get("neutral", False))
+        by_code[raw["gameCode"]]["pred"] = [round(hp), round(ap), round(p, 3)]
+        record[0] += (p >= 0.5) == (raw["local"]["score"] > raw["road"]["score"])
+        record[1] += 1
+    ratings = model.fit(model_games, teams, prior)
+    print(f"  model picked {record[0]}/{record[1]} winners so far this season")
+
     season_name = raw_games[0]["season"]["alias"] if raw_games else SEASON_CODE
     updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     js = (
@@ -182,6 +207,7 @@ def main():
         f"const UPDATED = {json.dumps(updated)};\n"
         f"const TEAMS = {json.dumps(sorted(teams.values(), key=lambda t: t['name']), ensure_ascii=False)};\n"
         f"const GAMES = {json.dumps(games, ensure_ascii=False, separators=(',', ':'))};\n"
+        f"const MODEL = {json.dumps(ratings.to_json(teams))};\n"
     )
     OUT.write_text(js, encoding="utf-8")
     print(f"Wrote {OUT} ({len(js) // 1024} KB)")

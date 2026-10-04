@@ -5,8 +5,6 @@
 //  #teams, #team/MAD, #schedule, #game/27, #predictions
 // =====================================================================
 
-const HOME_ADVANTAGE = 3; // points added to the home team in predictions
-const PRIOR_GAMES = 2;    // early in the season, ratings are pulled toward league average
 
 // ---------- Prepare data ----------
 const teamById = {};
@@ -82,35 +80,23 @@ function standingsTable(rows, compact = false) {
 }
 
 // ---------- Predictions ----------
-// Each team's points scored / allowed per game, pulled toward the league
-// average while few games are played, blended with the opponent's numbers,
-// plus home-court advantage.
-let ratingsCache = null;
-function teamRatings() {
-  if (ratingsCache) return ratingsCache;
-  const avg = played.length
-    ? played.reduce((s, g) => s + g.score[0] + g.score[1], 0) / (played.length * 2)
-    : 82;
-  ratingsCache = {};
-  computeStandings().forEach(r => {
-    ratingsCache[r.id] = {
-      off: (r.pf + avg * PRIOR_GAMES) / (r.gp + PRIOR_GAMES),
-      def: (r.pa + avg * PRIOR_GAMES) / (r.gp + PRIOR_GAMES),
-    };
-  });
-  return ratingsCache;
-}
-
-function predict(homeId, awayId) {
-  const R = teamRatings();
-  const h = R[homeId], a = R[awayId];
-  const homePts = (h.off + a.def) / 2 + HOME_ADVANTAGE / 2;
-  const awayPts = (a.off + h.def) / 2 - HOME_ADVANTAGE / 2;
+// Team ratings come from model.py (via update_data.py) — see the README for how they're made.
+function predict(homeId, awayId, neutral = false) {
+  const t = MODEL.teams, h = neutral ? 0 : MODEL.hca / 2;
+  const homePts = MODEL.avg + h + t[homeId][0] + t[awayId][1];
+  const awayPts = MODEL.avg - h + t[awayId][0] + t[homeId][1];
   const margin = homePts - awayPts;
-  const homeWin = 1 / (1 + Math.exp(-margin / 6)); // ~10 pt favourite ≈ 84%
+  const homeWin = 1 / (1 + Math.exp(-margin / MODEL.scale));
   let hp = Math.round(homePts), ap = Math.round(awayPts);
   if (hp === ap) margin >= 0 ? hp++ : ap++; // basketball has no draws
   return { homePts: hp, awayPts: ap, homeWin };
+}
+
+// how the model did on games already played (each predicted before tip-off)
+function predictionRecord(games = played) {
+  const done = games.filter(g => g.pred);
+  const right = done.filter(g => (g.pred[2] >= 0.5) === (g.score[0] > g.score[1])).length;
+  return { right, total: done.length };
 }
 
 function probBar(homeId, awayId, p) {
@@ -131,7 +117,7 @@ function gameRow(g, showPrediction = false) {
     awayCls = as > hs ? "winner" : "loser";
     middle = `${hs} – ${as}<small>Final · ${fmtDate(g.date)}</small>`;
   } else if (showPrediction) {
-    const p = predict(g.home, g.away);
+    const p = predict(g.home, g.away, g.neutral);
     middle = `<span class="muted">${p.homePts} – ${p.awayPts}</span><small>${fmtDate(g.date)} · ${fmtTime(g.date)}</small>`;
   } else {
     middle = `vs<small>${fmtDate(g.date)} · ${fmtTime(g.date)}</small>`;
@@ -260,18 +246,26 @@ const pages = {
       ((x.home === g.home && x.away === g.away) || (x.home === g.away && x.away === g.home)));
     let body;
     if (g.score) {
+      const pr = g.pred;
+      const hit = pr && (pr[2] >= 0.5) === (g.score[0] > g.score[1]);
       body = `
+        ${pr ? `<div class="card">
+          <h2>Pre-game prediction <span class="${hit ? "plus" : "minus"}">${hit ? "✓ correct" : "✗ wrong"}</span></h2>
+          ${probBar(g.home, g.away, pr[2])}
+          <p>Predicted: <b>${esc(h.name)} ${pr[0]} – ${pr[1]} ${esc(a.name)}</b> · Final: ${g.score[0]} – ${g.score[1]}</p>
+        </div>` : ""}
         ${quartersTable(g)}
         <div class="card"><h2>${esc(h.name)}</h2>${boxTable(g.box.home)}</div>
         <div class="card"><h2>${esc(a.name)}</h2>${boxTable(g.box.away)}</div>`;
     } else {
-      const p = predict(g.home, g.away);
+      const p = predict(g.home, g.away, g.neutral);
       body = `
         <div class="card">
           <h2>Prediction</h2>
           ${probBar(g.home, g.away, p.homeWin)}
           <p>Predicted score: <b>${esc(h.name)} ${p.homePts} – ${p.awayPts} ${esc(a.name)}</b></p>
-          <p class="note">Based on points scored and allowed this season, plus ${HOME_ADVANTAGE} points home advantage.</p>
+          <p class="note">Based on both teams' ratings (this season's results, last season and summer roster changes)
+            plus ${MODEL.hca} points home advantage. <a href="#predictions">How it works</a></p>
         </div>
         ${earlier.length ? `<div class="card"><h2>Earlier meetings this season</h2>${earlier.map(x => gameRow(x)).join("")}</div>` : ""}
         <div class="grid-2">
@@ -294,7 +288,16 @@ const pages = {
 
   predictions() {
     const rounds = [...new Set(upcoming.map(g => g.round))].sort((a, b) => a - b).slice(0, 2);
+    const rec = predictionRecord();
+    const lr = latestRound(), lrRec = predictionRecord(played.filter(g => g.round === lr));
     return `<h1>Predictions</h1>
+      ${rec.total ? `<div class="card">
+        <h2>Track record this season</h2>
+        <p class="record"><b>${rec.right} of ${rec.total}</b> winners picked correctly (${Math.round(100 * rec.right / rec.total)}%)
+          · Round ${lr}: ${lrRec.right}/${lrRec.total}</p>
+        <p class="note">Every played game was predicted using only the games before it. Over the last three
+          seasons this model picked 67% of winners; early-season rounds are the hardest.</p>
+      </div>` : ""}
       <div class="card">
         <h2>Pick any match-up</h2>
         <div class="controls">
@@ -307,16 +310,23 @@ const pages = {
         <div class="card">
           <h2>Round ${r}${i === 0 ? " — next up" : ""}</h2>
           ${upcoming.filter(g => g.round === r).map(g => {
-            const p = predict(g.home, g.away);
+            const p = predict(g.home, g.away, g.neutral);
             const fav = p.homeWin >= 0.5 ? teamById[g.home] : teamById[g.away];
             return `${gameRow(g, true)}${probBar(g.home, g.away, p.homeWin)}
               <p class="note" style="margin-top:0">Pick: <span class="pick">${esc(fav.name)}</span></p>`;
           }).join("")}
         </div>`).join("") || "<div class='card'><p class='muted'>No upcoming games.</p></div>"}
-      <p class="note">How it works: each team's average points scored and allowed (pulled toward the league
-        average while only a few games are played) are combined with the opponent's, then the home team gets
-        +${HOME_ADVANTAGE} points. The point margin is turned into a win probability. Predictions get better as
-        the season goes on. Later rounds are on the <a href="#schedule">schedule</a> page.</p>`;
+      <div class="card note">
+        <h2>How it works</h2>
+        <p>Every team has an attack and a defence rating: how many points it scores and allows compared to an
+          average EuroLeague team, adjusted for the strength of the opponents it played.</p>
+        <p>Before the season, ratings start from last season's level, adjusted for summer transfers: players
+          who arrived or left are valued by their EuroLeague production (PIR) last season. As games are played,
+          this season's results take over, with recent games counting more.</p>
+        <p>For a game, both teams' ratings give a predicted score, the home team gets +${MODEL.hca} points,
+          and the margin is turned into a win chance. All settings were chosen by testing on the 2023–24,
+          2024–25 and 2025–26 seasons. Later rounds are on the <a href="#schedule">schedule</a> page.</p>
+      </div>`;
   },
 };
 

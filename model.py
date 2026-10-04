@@ -1,0 +1,236 @@
+"""
+Prediction model shared by update_data.py (website) and backtest.py (accuracy testing).
+
+Each team gets an offensive rating (points scored above league average) and a
+defensive rating (points allowed above league average), estimated from all
+games played so far:
+
+    home points = league average + home advantage / 2 + home offense + away defense
+    away points = league average - home advantage / 2 + away offense + home defense
+
+The ratings are found with a weighted ridge regression:
+  - opponent-adjusted: beating strong teams counts more than beating weak ones
+  - recent games weigh more than old ones (RECENCY_HALF_LIFE_DAYS)
+  - ratings are pulled toward a prior: last season's final rating, shrunk by
+    CARRYOVER (rosters change every summer); PRIOR_STRENGTH is worth
+    "this many games" of evidence, so early-season predictions lean on last
+    season and later ones on this season's games.
+
+The predicted margin becomes a win probability with a logistic curve.
+Parameters below were chosen with backtest.py on past seasons.
+"""
+
+import json
+import math
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+HOME_ADVANTAGE = 3.0          # points
+PRIOR_STRENGTH = 30.0          # games' worth of weight on the prior
+CARRYOVER = 0.85               # share of last season's rating kept
+RECENCY_HALF_LIFE_DAYS = 240   # a game this many days old counts half
+TALENT_WEIGHT = 2.0          # net points per 1000 PIR of roster change
+NEW_TEAM_PRIOR = (-1.0, 1.0)  # (offense, defense) for teams not in last season: slightly below average
+LOGISTIC_SCALE = 5.7          # margin -> probability: p = 1 / (1 + exp(-margin / scale))
+DEFAULT_AVERAGE = 80.0        # league points per team per game when nothing is known
+
+
+def parse_date(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+
+
+def simplify_games(raw_games):
+    """API game objects -> plain dicts the model works with (played games only)."""
+    out = []
+    for g in raw_games:
+        if not g.get("played"):
+            continue
+        out.append({
+            "date": parse_date(g["utcDate"]),
+            "home": g["local"]["club"]["code"],
+            "away": g["road"]["club"]["code"],
+            "hs": g["local"]["score"],
+            "as": g["road"]["score"],
+            "neutral": g["phaseType"]["code"] == "FF" or bool(g.get("isNeutralVenue")),
+        })
+    out.sort(key=lambda g: g["date"])
+    return out
+
+
+def _solve(a, b):
+    """Solve a·x = b (Gaussian elimination with partial pivoting)."""
+    n = len(b)
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for c in range(n):
+        p = max(range(c, n), key=lambda r: abs(m[r][c]))
+        m[c], m[p] = m[p], m[c]
+        piv = m[c][c]
+        for r in range(c + 1, n):
+            f = m[r][c] / piv
+            if f:
+                row_r, row_c = m[r], m[c]
+                for k in range(c, n + 1):
+                    row_r[k] -= f * row_c[k]
+    x = [0.0] * n
+    for r in range(n - 1, -1, -1):
+        s = m[r][n] - sum(m[r][k] * x[k] for k in range(r + 1, n))
+        x[r] = s / m[r][r]
+    return x
+
+
+class Ratings:
+    def __init__(self, avg, off, dfn, hca=HOME_ADVANTAGE, scale=LOGISTIC_SCALE):
+        self.avg, self.off, self.dfn, self.hca, self.scale = avg, off, dfn, hca, scale
+
+    def predict(self, home, away, neutral=False):
+        """-> (home points, away points, home win probability)"""
+        h = 0 if neutral else self.hca / 2
+        o, d = self.off, self.dfn
+        hp = self.avg + h + o.get(home, NEW_TEAM_PRIOR[0]) + d.get(away, NEW_TEAM_PRIOR[1])
+        ap = self.avg - h + o.get(away, NEW_TEAM_PRIOR[0]) + d.get(home, NEW_TEAM_PRIOR[1])
+        return hp, ap, 1 / (1 + math.exp(-(hp - ap) / self.scale))
+
+    def to_json(self, teams):
+        return {
+            "avg": round(self.avg, 2), "hca": self.hca, "scale": self.scale,
+            "teams": {t: [round(self.off.get(t, NEW_TEAM_PRIOR[0]), 2), round(self.dfn.get(t, NEW_TEAM_PRIOR[1]), 2)]
+                      for t in teams},
+        }
+
+
+def fit(games, teams, prior=None, as_of=None, *, prior_strength=PRIOR_STRENGTH,
+        half_life=RECENCY_HALF_LIFE_DAYS, hca=HOME_ADVANTAGE, scale=LOGISTIC_SCALE):
+    """
+    games: simplified played games (only those before `as_of` are used)
+    teams: team codes to rate
+    prior: preseason Ratings from build_prior (or None), used as-is
+    """
+    if as_of is not None:
+        games = [g for g in games if g["date"] < as_of]
+    ref = as_of or (games[-1]["date"] if games else None)
+    teams = sorted(teams)
+    idx = {t: i for i, t in enumerate(teams)}
+    n = len(teams)
+
+    def weight(g):
+        return 0.5 ** ((ref - g["date"]).days / half_life) if half_life else 1.0
+
+    # league average: this season's games, blended with last season's average early on
+    prior_avg = prior.avg if prior else DEFAULT_AVERAGE
+    wsum = sum(2 * weight(g) for g in games)
+    psum = sum(weight(g) * (g["hs"] + g["as"]) for g in games)
+    k = 2 * n  # last season's average counts like two rounds of games
+    avg = (psum + prior_avg * k) / (wsum + k)
+
+    def prior_of(t):
+        if prior and t in prior.off:
+            return prior.off[t], prior.dfn[t]
+        return NEW_TEAM_PRIOR
+
+    # unknowns: offense[0..n-1], defense[n..2n-1]; normal equations A x = b
+    size = 2 * n
+    a = [[0.0] * size for _ in range(size)]
+    b = [0.0] * size
+    for t in teams:
+        po, pd = prior_of(t)
+        i = idx[t]
+        a[i][i] += prior_strength
+        b[i] += prior_strength * po
+        a[n + i][n + i] += prior_strength
+        b[n + i] += prior_strength * pd
+    for g in games:
+        if g["home"] not in idx or g["away"] not in idx:
+            continue
+        w = weight(g)
+        h = 0 if g["neutral"] else hca / 2
+        hi, ai = idx[g["home"]], idx[g["away"]]
+        # home points = avg + h + off[home] + def[away]; away points = avg - h + off[away] + def[home]
+        for off_i, def_j, y in ((hi, n + ai, g["hs"] - avg - h), (ai, n + hi, g["as"] - avg + h)):
+            a[off_i][off_i] += w
+            a[def_j][def_j] += w
+            a[off_i][def_j] += w
+            a[def_j][off_i] += w
+            b[off_i] += w * y
+            b[def_j] += w * y
+    x = _solve(a, b)
+    return Ratings(avg, {t: x[idx[t]] for t in teams}, {t: x[n + idx[t]] for t in teams}, hca, scale)
+
+
+def season_teams(games):
+    return {g["home"] for g in games} | {g["away"] for g in games}
+
+
+# ---------- Past seasons (finished, so cached forever) ----------
+HISTORY = Path(__file__).parent / ".cache" / "history"
+API_V2 = "https://api-live.euroleague.net/v2/competitions/E/seasons/{season}/games"
+API_PLAYERS = ("https://api-live.euroleague.net/v3/competitions/E/statistics/players/traditional"
+               "?seasonMode=Single&seasonCode={season}&statisticMode=Accumulated&limit=1000")
+
+
+def _cached(name, url):
+    f = HISTORY / name
+    if not f.exists():
+        HISTORY.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(url, headers={"User-Agent": "euroleague-hub"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            f.write_bytes(r.read())
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+def history_games(season):
+    return simplify_games(_cached(f"{season}.json", API_V2.format(season=season))["data"])
+
+
+def history_players(season):
+    """-> list of (player code, team code, games, total PIR) for a finished season"""
+    data = _cached(f"players_{season}.json", API_PLAYERS.format(season=season))["players"]
+    return [(p["player"]["code"], p["player"]["team"]["code"], p["gamesPlayed"], p["pir"]) for p in data]
+
+
+def history_roster(season):
+    """team -> player codes that played at least 5 games for it"""
+    roster = {}
+    for code, team, games, _ in history_players(season):
+        if games >= 5:
+            roster.setdefault(team, set()).add(code)
+    return roster
+
+
+def previous(season):
+    return f"E{int(season[1:]) - 1}"
+
+
+# ---------- Preseason prior ----------
+def build_prior(last, last_players, roster, *, carryover=CARRYOVER, talent_weight=TALENT_WEIGHT):
+    """
+    last:         Ratings at the end of last season
+    last_players: history_players(last season)
+    roster:       team -> player codes on this season's roster
+    Prior = last season's rating * carryover
+          + talent_weight * (last-season PIR of players who arrived - of players who left) / 1000
+    """
+    pir = {code: p for code, _, _, p in last_players}
+    old_roster = {}
+    for code, team, _, _ in last_players:
+        old_roster.setdefault(team, set()).add(code)
+    off, dfn = {}, {}
+    for team, players in roster.items():
+        old = old_roster.get(team, set())
+        change = (sum(pir.get(c, 0) for c in players - old) - sum(pir.get(c, 0) for c in old - players)) / 1000
+        o, d = (last.off[team] * carryover, last.dfn[team] * carryover) if team in last.off else NEW_TEAM_PRIOR
+        off[team] = o + talent_weight * change / 2
+        dfn[team] = d - talent_weight * change / 2
+    return Ratings(last.avg, off, dfn, last.hca, last.scale)
+
+
+def preseason_prior(season, roster, **params):
+    """Prior for `season` from the two previous seasons and this season's roster."""
+    p1, p2 = previous(season), previous(previous(season))
+    fit_params = {k: v for k, v in params.items() if k not in ("carryover", "talent_weight")}
+    prior_params = {k: v for k, v in params.items() if k in ("carryover", "talent_weight")}
+    g2, g1 = history_games(p2), history_games(p1)
+    r2 = fit(g2, season_teams(g2), None, **fit_params)
+    r1_prior = build_prior(r2, history_players(p2), history_roster(p1), **prior_params)
+    r1 = fit(g1, season_teams(g1), r1_prior, **fit_params)
+    return build_prior(r1, history_players(p1), roster, **prior_params)
