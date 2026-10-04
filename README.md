@@ -1,54 +1,71 @@
 # Euroleague Hub
 
-A simple Euroleague basketball website: teams, players, statistics, schedule and predictions.
-Plain HTML, CSS and JavaScript — no installation and no build step.
+A simple EuroLeague basketball website with real data: teams, players, statistics, schedule and predictions.
+Plain HTML, CSS and JavaScript, plus one small Python script that downloads the data.
 
 ## Pages
 
 | Page | What it shows |
 |------|---------------|
-| **Home** | Latest results, next games (with predicted scores), top of the table, stat leaders |
+| **Home** | Latest results, next games (with predicted scores), standings, stat leaders |
 | **Standings** | Full table: games, wins, losses, points for/against, +/-, last 5 games |
-| **Stats** | Every player's per-game stats. Filter by team, click a column to sort |
-| **Teams** | All teams. Click one to see its players and all of its games |
-| **Schedule** | Go round by round through results and upcoming games, filter by team |
-| **Game** | Click any game: score (or prediction), both teams' players, earlier meetings |
-| **Predictions** | Win probability and predicted score for every upcoming game, plus a "pick any two teams" tool |
+| **Stats** | Every player's per-game averages. Filter by team, click a column to sort |
+| **Teams** | All 20 teams. Click one to see coach, roster with season averages, and all 38 games |
+| **Schedule** | Go round by round through all 38 rounds, filter by team |
+| **Game** | Played: quarter scores and full box score for both teams. Upcoming: prediction, earlier meetings, both rosters |
+| **Predictions** | Win probability and predicted score for the next two rounds, plus a "pick any two teams" tool |
 
 ## Run it
 
-Open `index.html` in your browser (double-click it). That's it.
+Open `index.html` in your browser (double-click it). If your browser blocks it, serve the folder:
+
+```
+python -m http.server 8000
+```
+
+and open http://localhost:8000.
 
 ## Updating the data
 
-Everything comes from **`js/data.js`**:
+```
+python update_data.py
+```
 
-- **Teams and players** — `TEAMS`. Each player row is
-  `[name, position, nationality, games, minutes, points, rebounds, assists, steals, blocks, PIR]`.
-- **Games** — `GAMES`. When a game is played, change `score: null` to `score: [home, away]`.
+This downloads everything from the official EuroLeague API (`api-live.euroleague.net`) and writes
+`js/data.js`: clubs, rosters, coaches, all games, and box scores of every played game. Player season
+averages are calculated from those box scores. Run it after each round to get new results.
 
-Standings, leaders and predictions update automatically from that file.
+- Finished box scores are cached in `.cache/` so later runs only download new games.
+- If the API rate-limits you, the script waits automatically and continues.
+- Another season: `python update_data.py E2025` (2025-26).
 
-> The included data is **sample data** for demonstration — rosters and numbers are not official.
+Requires Python 3 (standard library only, nothing to install).
 
 ## How predictions work
 
-For each team the site uses average points scored and allowed per game. For a game:
+For each team the site uses average points scored and allowed per game. Early in the season those
+averages are pulled toward the league average (as if every team had also played 2 average games), so
+one big win doesn't skew everything. For a game:
 
 ```
 home score = (home points scored + away points allowed) / 2 + 1.5
 away score = (away points scored + home points allowed) / 2 - 1.5
 ```
 
-That gives a 3-point home advantage. The predicted margin is turned into a win probability
-with a logistic curve (a 10-point favourite wins about 84% of the time). The model gets more
-reliable as more rounds are played. You can change `HOME_ADVANTAGE` at the top of `js/app.js`.
+That gives a 3-point home advantage. The predicted margin is turned into a win probability with a
+logistic curve (a 10-point favourite wins about 84% of the time). Settings are at the top of `js/app.js`.
+
+Standings are sorted by wins, then point difference. The official EuroLeague tie-breaker (head-to-head)
+can differ when teams are level.
 
 ## Project structure
 
 ```
-index.html      page layout and navigation
-css/style.css   styles (light + dark mode)
-js/data.js      teams, players, games  ← edit this
-js/app.js       pages, standings, stats and prediction logic
+index.html       page layout and navigation
+css/style.css    styles (light + dark mode)
+js/app.js        pages, standings, stats and prediction logic
+js/data.js       generated data — don't edit by hand
+update_data.py   downloads data from the EuroLeague API
 ```
+
+Not affiliated with EuroLeague Basketball. Data and team logos belong to their owners.
