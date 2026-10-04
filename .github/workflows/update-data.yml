@@ -1,0 +1,47 @@
+name: Update EuroLeague data
+
+on:
+  schedule:
+    - cron: "0 5 * * *" # every day at 05:00 UTC, after the previous evening's games
+  workflow_dispatch: # allows running it manually from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Finished box scores never change; keep them between runs so only new games are downloaded.
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: euroleague-cache-${{ github.run_id }}
+          restore-keys: euroleague-cache-
+
+      - name: Download data
+        run: python -u update_data.py
+
+      - name: Commit if anything changed
+        run: |
+          # data.js always contains a new "updated" time; only commit when the real data changed
+          if git diff --quiet -I '^const UPDATED' -- js/data.js; then
+            echo "No new data."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/data.js
+          git commit -m "Update EuroLeague data ($(date -u +%Y-%m-%d))"
+          git push

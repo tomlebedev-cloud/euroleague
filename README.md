@@ -41,6 +41,17 @@ averages are calculated from those box scores. Run it after each round to get ne
 
 Requires Python 3 (standard library only, nothing to install).
 
+### Automatic daily update
+
+On GitHub, the workflow in `.github/workflows/update-data.yml` runs `update_data.py` every day at
+05:00 UTC and commits the new `js/data.js` when results changed. The website (GitHub Pages) then
+redeploys by itself. To update right away: **Actions → Update EuroLeague data → Run workflow**.
+
+Live site: https://tomlebedev-cloud.github.io/euroleague/
+
+Note: GitHub pauses scheduled workflows in repositories with no activity for 60 days (e.g. in the
+summer off-season). If that happens, re-enable it from the Actions tab.
+
 ## How predictions work
 
 For each team the site uses average points scored and allowed per game. Early in the season those
