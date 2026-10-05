@@ -1,6 +1,7 @@
 # Euroleague Hub
 
 A simple EuroLeague basketball website with real data: teams, players, statistics, schedule and predictions.
+English or Lithuanian (EN / LT switch in the header, remembered by the browser).
 Plain HTML, CSS and JavaScript, plus one small Python script that downloads the data.
 
 ## Pages

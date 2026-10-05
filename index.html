@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Euroleague Hub</title>
-  <link rel="stylesheet" href="css/style.css?v=9">
+  <link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
   <header>
     <div class="wrap header-inner">
       <a class="logo" href="#home">🏀 Euroleague Hub</a>
+      <div class="lang"><button data-lang="en">EN</button><button data-lang="lt">LT</button></div>
       <nav>
         <a href="#home" data-nav="home">Home</a>
         <a href="#standings" data-nav="standings">Standings</a>
@@ -26,14 +27,13 @@
   <main class="wrap" id="app"></main>
 
   <footer class="wrap">
-    Data: official EuroLeague API · updated <span id="updated"></span> · run <code>python update_data.py</code> to refresh.
-    Not affiliated with EuroLeague Basketball.
+    <span id="footerText"></span>
   </footer>
 
   <script src="js/data.js"></script>
-  <script src="js/odds.js?v=9"></script>
-  <script src="js/app.js?v=9"></script>
-  <script src="js/betting.js?v=9"></script>
-  <script src="js/ticket.js?v=9"></script>
+  <script src="js/odds.js?v=12"></script>
+  <script src="js/app.js?v=12"></script>
+  <script src="js/betting.js?v=12"></script>
+  <script src="js/ticket.js?v=12"></script>
 </body>
 </html>

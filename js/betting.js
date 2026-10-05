@@ -136,20 +136,14 @@ function selections(g) {
     out.push({ market, line, ...s1, fair: i1 / (i1 + i2), vig: i1 + i2 - 1 });
     out.push({ market, line, ...s2, fair: i2 / (i1 + i2), vig: i1 + i2 - 1 });
   };
-  if (o.ml) pair("ml", 0, [
-    { side: "home", label: `${h.name} to win`, odds: o.ml[0] },
-    { side: "away", label: `${a.name} to win`, odds: o.ml[1] }]);
-  if (o.hcp && isFinite(o.hcp[0])) pair("hcp", o.hcp[0], [
-    { side: "home", label: `${h.name} ${signed(o.hcp[0])}`, odds: o.hcp[1] },
-    { side: "away", label: `${a.name} ${signed(-o.hcp[0])}`, odds: o.hcp[2] }]);
-  if (o.tot && o.tot[0] > 0) pair("tot", o.tot[0], [
-    { side: "over", label: `Over ${o.tot[0]}`, odds: o.tot[1] },
-    { side: "under", label: `Under ${o.tot[0]}`, odds: o.tot[2] }]);
+  if (o.ml) pair("ml", 0, [{ side: "home", odds: o.ml[0] }, { side: "away", odds: o.ml[1] }]);
+  if (o.hcp && isFinite(o.hcp[0])) pair("hcp", o.hcp[0], [{ side: "home", odds: o.hcp[1] }, { side: "away", odds: o.hcp[2] }]);
+  if (o.tot && o.tot[0] > 0) pair("tot", o.tot[0], [{ side: "over", odds: o.tot[1] }, { side: "under", odds: o.tot[2] }]);
 
   const sim = simulate(g);
   return out.map(s => {
     const c = chances(sim, s.market, s.side, s.line);
-    return price({ ...s, game: g, model: c.win, push: c.push });
+    return price({ ...s, label: betLabel(g, s), game: g, model: c.win, push: c.push });
   });
 }
 
@@ -200,7 +194,9 @@ function settle(b) {
 // "Hcp: home-line home away", "Tot: line over under". Missing numbers are simply skipped.
 function oddsTemplate(games) {
   const v = x => x ?? "";
-  return `EuroLeague round ${games[0]?.round ?? ""} odds. Decimal odds; handicap line for the HOME team (e.g. -4.5).\n\n`
+  return L(`EuroLeague round ${games[0]?.round ?? ""} odds. Decimal odds; handicap line for the HOME team (e.g. -4.5).`,
+    `Eurolygos ${games[0]?.round ?? ""} turo koeficientai. Win = pergalė (namai, svečiai); Hcp = fora NAMŲ komandai (pvz. -4.5),
+namai, svečiai; Tot = totalas, daugiau, mažiau.`) + "\n\n"
     + games.map(g => {
       const o = gameOdds(g.code), h = teamById[g.home], a = teamById[g.away];
       return `#${g.code} ${h.name} – ${a.name} (${fmtDate(g.date)} ${fmtTime(g.date)})
@@ -281,10 +277,13 @@ function historyCard() {
   const games = closingOdds();
   const pending = Object.keys(oddsLog).filter(c => !gameByCode[c]?.score).length;
   if (!games.length) {
-    return `<div class="card"><h2>Model vs bookmaker</h2>
-      <p class="muted">Odds you type in are saved automatically with the model's chances at that moment.
-        Once games are played, this shows whether the model or the bookmaker priced them better.
-        ${pending ? `Saved so far: ${pending} game${pending > 1 ? "s" : ""} waiting for results.` : ""}</p></div>`;
+    return `<div class="card"><h2>${L("Model vs bookmaker", "Modelis prieš lažybų bendrovę")}</h2>
+      <p class="muted">${L(`Odds you type in are saved automatically with the model's chances at that moment.
+        Once games are played, this shows whether the model or the bookmaker priced them better.`,
+        `Įvesti koeficientai automatiškai išsaugomi kartu su tuometinėmis modelio tikimybėmis. Po rungtynių čia
+        matysite, kas tiksliau įvertino: modelis ar lažybų bendrovė.`)}
+        ${pending ? L(`Saved so far: ${pending} game${pending > 1 ? "s" : ""} waiting for results.`,
+          `Išsaugota: ${pending} rungt. laukia rezultatų.`) : ""}</p></div>`;
   }
   // accuracy: log loss of both on the side that the odds were on (home / over), pushes left out
   const acc = { ml: [0, 0, 0], hcp: [0, 0, 0], tot: [0, 0, 0] }; // [games, model loss, bookmaker loss]
@@ -311,41 +310,45 @@ function historyCard() {
       }
     }
   }
-  const names = { ml: "Winner", hcp: "Handicap", tot: "Total" };
+  const names = { ml: L("Winner", "Nugalėtojas"), hcp: L("Handicap", "Fora"), tot: L("Total", "Totalas") };
   const accRows = Object.entries(acc).filter(([, a]) => a[0]).map(([k, a]) => {
     const m = a[1] / a[0], b = a[2] / a[0];
     return `<tr><td class="left">${names[k]}</td><td>${a[0]}</td><td>${m.toFixed(3)}</td><td>${b.toFixed(3)}</td>
-      <td class="${m < b ? "plus" : "minus"}">${m < b ? "model" : "bookmaker"}</td></tr>`;
+      <td class="${m < b ? "plus" : "minus"}">${m < b ? L("model", "modelis") : L("bookmaker", "lažybų bendrovė")}</td></tr>`;
   }).join("");
-  const fmtOut = r => r > 0 ? `<span class="plus">won</span>` : r < 0 ? `<span class="minus">lost</span>` : "push";
+  const fmtOut = r => r > 0 ? `<span class="plus">${L("won", "laimėta")}</span>` : r < 0 ? `<span class="minus">${L("lost", "pralaimėta")}</span>` : L("push", "grąžinta");
   return `<div class="card">
-    <h2>Model vs bookmaker</h2>
-    <p class="note" style="margin-top:0">${games.length} finished game${games.length > 1 ? "s" : ""} with odds saved before
-      tip-off${pending ? ` · ${pending} waiting for results` : ""}. Lower log loss = better chances.</p>
+    <h2>${L("Model vs bookmaker", "Modelis prieš lažybų bendrovę")}</h2>
+    <p class="note" style="margin-top:0">${L(`${games.length} finished game${games.length > 1 ? "s" : ""} with odds saved before
+      tip-off${pending ? ` · ${pending} waiting for results` : ""}. Lower log loss = better chances.`,
+      `Pasibaigusių rungtynių su koeficientais, išsaugotais iki pradžios: ${games.length}${pending ? ` · laukia rezultatų: ${pending}` : ""}.
+      Mažesnis „log loss“ = tikslesnės tikimybės.`)}</p>
     <div class="table-wrap"><table>
-      <thead><tr><th class="left">Market</th><th>Games</th><th>Model</th><th>Bookmaker</th><th>Better</th></tr></thead>
-      <tbody>${accRows || "<tr><td colspan='5' class='muted left'>No complete odds yet.</td></tr>"}</tbody>
+      <thead><tr><th class="left">${L("Market", "Rinka")}</th><th>${L("Games", "Rungt.")}</th><th>${L("Model", "Modelis")}</th><th>${L("Bookmaker", "Lažybų bendr.")}</th><th>${L("Better", "Tikslesnis")}</th></tr></thead>
+      <tbody>${accRows || `<tr><td colspan='5' class='muted left'>${L("No complete odds yet.", "Pilnų koeficientų dar nėra.")}</td></tr>`}</tbody>
     </table></div>
-    <p class="record">Every value bet at 1 € (current settings): <b>${flat.n}</b> bets, ${flat.won} won, profit
+    <p class="record">${L("Every value bet at 1 € (current settings)", "Kiekvienas vertės statymas po 1 € (dabartiniai nustatymai)")}: <b>${flat.n}</b> ${L("bets", "statymų")}, ${flat.won} ${L("won", "laimėta")}, ${L("profit", "pelnas")}
       <b class="${flat.profit >= 0 ? "plus" : "minus"}">${flat.profit >= 0 ? "+" : ""}${flat.profit.toFixed(2)} €</b>
       ${flat.n ? `(${(100 * flat.profit / flat.n).toFixed(1)}% ROI)` : ""}</p>
-    ${rows.length ? `<details class="lines"><summary>Value bets in detail</summary><div class="table-wrap"><table>
-      <thead><tr><th class="left">Game</th><th class="left">Bet</th><th>Odds</th><th>Model</th><th>Value</th><th>Final</th><th>Result</th></tr></thead>
+    ${rows.length ? `<details class="lines"><summary>${L("Value bets in detail", "Vertės statymai išsamiai")}</summary><div class="table-wrap"><table>
+      <thead><tr><th class="left">${L("Game", "Rungtynės")}</th><th class="left">${L("Bet", "Statymas")}</th><th>${L("Odds", "Koef.")}</th><th>${L("Model", "Modelis")}</th><th>${L("Value", "Vertė")}</th><th>${L("Final", "Rezultatas")}</th><th>${L("Result", "Baigtis")}</th></tr></thead>
       <tbody>${rows.map(({ g, s, priced, r }) => `<tr>
         <td class="left"><a href="#game/${g.code}">R${g.round} ${esc(teamById[g.home].short)}–${esc(teamById[g.away].short)}</a></td>
         <td class="left">${esc(betLabel(g, s))}</td><td>${s.odds.toFixed(2)}</td><td>${pct(s.model)}</td>
         <td>${evText(priced.ev)}</td><td>${g.score.join("–")}</td><td>${fmtOut(r)}</td></tr>`).join("")}</tbody>
     </table></div></details>` : ""}
-    <p class="note">Judge this after 100+ bets: over a few rounds it is mostly luck. A model that beats the
-      bookmaker's log loss over a season is rare; profit without that is probably luck too.</p>
+    <p class="note">${L(`Judge this after 100+ bets: over a few rounds it is mostly luck. A model that beats the
+      bookmaker's log loss over a season is rare; profit without that is probably luck too.`,
+      `Vertinkite po 100+ statymų: per kelis turus tai daugiausia sėkmė. Modelis, per sezoną lenkiantis lažybų
+      bendrovės „log loss“, yra retenybė; pelnas be to greičiausiai irgi sėkmė.`)}</p>
   </div>`;
 }
 
 function betLabel(g, s) {
   const h = teamById[g.home], a = teamById[g.away];
-  if (s.market === "ml") return `${(s.side === "home" ? h : a).name} to win`;
+  if (s.market === "ml") return L(`${(s.side === "home" ? h : a).name} to win`, `${(s.side === "home" ? h : a).name} laimės`);
   if (s.market === "hcp") return s.side === "home" ? `${h.name} ${signed(s.line)}` : `${a.name} ${signed(-s.line)}`;
-  return `${s.side === "over" ? "Over" : "Under"} ${s.line}`;
+  return `${s.side === "over" ? L("Over", "Daugiau nei") : L("Under", "Mažiau nei")} ${s.line}`;
 }
 
 // move everything saved to another browser
@@ -371,7 +374,7 @@ function importData(file) {
     Object.assign(odds, d.odds || {});
     save("bets.oddsLog", oddsLog); save("bets.log", myBets); save("bets.out", lineups); save("bets.odds", odds);
     route();
-  }).catch(() => alert("That file could not be read."));
+  }).catch(() => alert(L("That file could not be read.", "Nepavyko perskaityti failo.")));
 }
 
 function myBetsCard() {
@@ -380,25 +383,26 @@ function myBetsCard() {
   const rows = myBets.map(b => {
     const r = settle(b), g = gameByCode[b.code];
     if (r === null) open += b.stake; else { staked += b.stake; profit += r; }
-    const status = r === null ? "<span class='muted'>open</span>"
-      : r > 0 ? `<span class="plus">won +${r.toFixed(2)}</span>`
-      : r < 0 ? `<span class="minus">lost ${r.toFixed(2)}</span>` : "push";
+    const status = r === null ? `<span class='muted'>${L("open", "laukia")}</span>`
+      : r > 0 ? `<span class="plus">${L("won", "laimėta")} +${r.toFixed(2)}</span>`
+      : r < 0 ? `<span class="minus">${L("lost", "pralaimėta")} ${r.toFixed(2)}</span>` : L("push", "grąžinta");
     return `<tr>
       <td class="left">${g ? `<a href="#game/${g.code}">R${g.round} ${esc(teamById[g.home].short)}–${esc(teamById[g.away].short)}</a>` : esc(b.code)}</td>
-      <td class="left">${esc(b.label)}</td><td>${b.odds.toFixed(2)}</td><td>${b.stake.toFixed(2)}</td>
+      <td class="left">${esc(g ? betLabel(g, b) : b.label)}</td><td>${b.odds.toFixed(2)}</td><td>${b.stake.toFixed(2)}</td>
       <td>${g && g.score ? g.score.join("–") : ""}</td><td>${status}</td>
-      <td><button class="link" data-del="${b.id}" title="Remove">✕</button></td></tr>`;
+      <td><button class="link" data-del="${b.id}" title="${L("Remove", "Pašalinti")}">✕</button></td></tr>`;
   }).join("");
   return `<div class="card">
-    <h2>My bets</h2>
-    <p class="record">Settled: staked <b>${staked.toFixed(2)}</b> · profit
+    <h2>${L("My bets", "Mano statymai")}</h2>
+    <p class="record">${L("Settled: staked", "Įvertinti: pastatyta")} <b>${staked.toFixed(2)}</b> · ${L("profit", "pelnas")}
       <b class="${profit >= 0 ? "plus" : "minus"}">${profit >= 0 ? "+" : ""}${profit.toFixed(2)}</b>
-      ${staked ? `(${(100 * profit / staked).toFixed(1)}% ROI)` : ""} · open: ${open.toFixed(2)}</p>
+      ${staked ? `(${(100 * profit / staked).toFixed(1)}% ROI)` : ""} · ${L("open", "laukia")}: ${open.toFixed(2)}</p>
     <div class="table-wrap"><table>
-      <thead><tr><th class="left">Game</th><th class="left">Bet</th><th>Odds</th><th>Stake</th><th>Final</th><th>Result</th><th></th></tr></thead>
+      <thead><tr><th class="left">${L("Game", "Rungtynės")}</th><th class="left">${L("Bet", "Statymas")}</th><th>${L("Odds", "Koef.")}</th><th>${L("Stake", "Suma")}</th><th>${L("Final", "Rezultatas")}</th><th>${L("Result", "Baigtis")}</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
-    <p class="note">Saved in this browser only. Results fill in automatically after the data update.</p>
+    <p class="note">${L("Saved in this browser only. Results fill in automatically after the data update.",
+      "Saugoma tik šioje naršyklėje. Rezultatai atsiranda automatiškai, kai atsinaujina duomenys.")}</p>
   </div>`;
 }
 
@@ -413,11 +417,11 @@ function fairOdds(p) { return p > 0 ? (1 / p).toFixed(2) : "–"; }
 
 function lineupList(g, team) {
   const regs = regulars(team);
-  if (!regs.length) return `<p class="muted">Not enough games yet.</p>`;
+  if (!regs.length) return `<p class="muted">${L("Not enough games yet.", "Dar per mažai rungtynių.")}</p>`;
   return regs.map((p, i) => `<label class="lineup ${p[3] ? "muted" : ""} ${i < ABS.keyPlayers ? "key" : ""}">
       <input type="checkbox" data-player="${p[0]}" ${isOut(g, p) ? "checked" : ""} ${p[3] ? "disabled" : ""}>
       <span>${i < ABS.keyPlayers ? "★ " : ""}${esc(playerName[p[0]] || p[0])}</span>
-      <small>${p[3] ? "left club · " : p[2] ? "missed last game · " : ""}${p[1].toFixed(1)} PIR</small>
+      <small>${p[3] ? L("left club · ", "išėjo iš klubo · ") : p[2] ? L("missed last game · ", "praleido paskutines · ") : ""}${p[1].toFixed(1)} PIR</small>
     </label>`).join("");
 }
 
@@ -428,33 +432,37 @@ function modelBox(g) {
   // model probabilities at lines around the fair ones, for quick comparison with the bookmaker
   const hcpLines = [-6, -3, 0, 3, 6].map(d => Math.round(fairHcp) + d + 0.5);
   const totLines = [-8, -4, 0, 4, 8].map(d => Math.round(fairTot) + d + 0.5);
-  const names = list => list.map(x => esc(playerName[x[0]] || x[0]) + (x[3] ? " (left club)" : "")).join(", ");
+  const names = list => list.map(x => esc(playerName[x[0]] || x[0]) + (x[3] ? L(" (left club)", " (išėjo iš klubo)") : "")).join(", ");
   const outs = [[h, p.outHome], [a, p.outAway]].filter(([, l]) => l.length)
-    .map(([t, l]) => `${esc(t.short)} without ${names(l)}`).join("; ");
+    .map(([t, l]) => `${esc(t.short)} ${L("without", "be")} ${names(l)}`).join("; ");
   const shift = Math.abs(p.shift) >= 0.05
-    ? ` · line-ups move the margin <b>${signed(+p.shift.toFixed(1))}</b> for ${esc(h.short)}` : "";
+    ? L(` · line-ups move the margin <b>${signed(+p.shift.toFixed(1))}</b> for ${esc(h.short)}`,
+        ` · sudėtys keičia ${esc(h.short)} skirtumą <b>${signed(+p.shift.toFixed(1))}</b>`) : "";
   return `
-    <p class="model-line">Model: <b>${p.homePts}–${p.awayPts}</b> · ${esc(h.short)} wins ${pct(pHome)}
-      (fair odds ${fairOdds(pHome)} / ${fairOdds(1 - pHome)}) · fair handicap <b>${esc(h.short)} ${signed(fairHcp)}</b>
-      · fair total <b>${fairTot}</b>${shift}</p>
-    ${outs ? `<p class="note out-line">Key players out: ${outs}</p>` : ""}
-    <details class="lines" data-details="lineup"><summary>Line-ups: tick players who won't play</summary>
+    <p class="model-line">${L("Model", "Modelis")}: <b>${p.homePts}–${p.awayPts}</b> · ${esc(h.short)} ${L("wins", "laimi")} ${pct(pHome)}
+      (${L("fair odds", "teisingi koef.")} ${fairOdds(pHome)} / ${fairOdds(1 - pHome)}) · ${L("fair handicap", "teisinga fora")} <b>${esc(h.short)} ${signed(fairHcp)}</b>
+      · ${L("fair total", "teisingas totalas")} <b>${fairTot}</b>${shift}</p>
+    ${outs ? `<p class="note out-line">${L("Key players out", "Nežais pagrindiniai žaidėjai")}: ${outs}</p>` : ""}
+    <details class="lines" data-details="lineup"><summary>${L("Line-ups: tick players who won't play", "Sudėtys: pažymėkite nežaisiančius žaidėjus")}</summary>
       <div class="grid-2">
         <div><div class="round-title">${esc(h.name)}</div>${lineupList(g, g.home)}</div>
         <div><div class="round-title">${esc(a.name)}</div>${lineupList(g, g.away)}</div>
       </div>
-      <p class="note">Regulars by PIR per game. ★ = key player: each one who misses the game costs his team
+      <p class="note">${L(`Regulars by PIR per game. ★ = key player: each one who misses the game costs his team
         about ${ABS.perPlayer} points (measured on the last three seasons); other players don't move the prediction.
-        Players who missed the team's latest game are ticked automatically: check the injury news and correct it.
-        <button class="link" data-reset="${g.code}">Reset</button></p>
+        Players who missed the team's latest game are ticked automatically: check the injury news and correct it.`,
+        `Nuolatiniai žaidėjai pagal PIR per rungtynes. ★ = pagrindinis žaidėjas: kiekvienas nežaidžiantis atima iš komandos
+        maždaug ${ABS.perPlayer} taško (išmatuota per tris praėjusius sezonus); kiti žaidėjai prognozės nekeičia.
+        Praleidę paskutines komandos rungtynes pažymimi automatiškai: patikrinkite traumų naujienas ir pataisykite.`)}
+        <button class="link" data-reset="${g.code}">${L("Reset", "Atstatyti")}</button></p>
     </details>
-    <details class="lines" data-details="chances"><summary>Model chances at other lines</summary>
+    <details class="lines" data-details="chances"><summary>${L("Model chances at other lines", "Modelio tikimybės prie kitų linijų")}</summary>
       <div class="grid-2">
-        <table><thead><tr><th class="left">${esc(h.short)} handicap</th><th>${esc(h.short)} covers</th><th>Fair odds</th></tr></thead><tbody>
+        <table><thead><tr><th class="left">${esc(h.short)} ${L("handicap", "fora")}</th><th>${L(`${esc(h.short)} covers`, `${esc(h.short)} įveikia`)}</th><th>${L("Fair odds", "Teisingi koef.")}</th></tr></thead><tbody>
           ${hcpLines.map(l => { const c = chances(sim, "hcp", "home", l).win;
             return `<tr><td class="left">${signed(l)}</td><td>${pct(c)}</td><td>${fairOdds(c)}</td></tr>`; }).join("")}
         </tbody></table>
-        <table><thead><tr><th class="left">Total</th><th>Over</th><th>Fair odds</th></tr></thead><tbody>
+        <table><thead><tr><th class="left">${L("Total", "Totalas")}</th><th>${L("Over", "Daugiau")}</th><th>${L("Fair odds", "Teisingi koef.")}</th></tr></thead><tbody>
           ${totLines.map(l => { const c = chances(sim, "tot", "over", l).win;
             return `<tr><td class="left">${l}</td><td>${pct(c)}</td><td>${fairOdds(c)} / ${fairOdds(1 - c)}</td></tr>`; }).join("")}
         </tbody></table>
@@ -467,20 +475,21 @@ function gameCard(g) {
   return `<div class="card bet-game" data-code="${g.code}">
     ${gameRow(g, true)}
     <div class="model-box">${modelBox(g)}</div>
-    ${started(g) ? `<p class="note">Started: odds are locked, the history keeps those saved before tip-off.</p>` : ""}
+    ${started(g) ? `<p class="note">${L("Started: odds are locked, the history keeps those saved before tip-off.",
+      "Prasidėjo: koeficientai užrakinti, istorijoje lieka išsaugoti iki pradžios.")}</p>` : ""}
     <div class="odds-grid">
-      <span class="lbl">Winner</span>
-      <label>${esc(h.short)} ${oddsInput(g.code, "ml", 0, "odds")}</label>
-      <label>${esc(a.short)} ${oddsInput(g.code, "ml", 1, "odds")}</label>
+      <span class="lbl">${L("Winner", "Nugalėtojas")}</span>
+      <label>${esc(h.short)} ${oddsInput(g.code, "ml", 0, L("odds", "koef."))}</label>
+      <label>${esc(a.short)} ${oddsInput(g.code, "ml", 1, L("odds", "koef."))}</label>
       <span></span>
-      <span class="lbl">Handicap</span>
-      <label>${esc(h.short)} line ${oddsInput(g.code, "hcp", 0, "-4.5", "0.5")}</label>
-      <label>${esc(h.short)} ${oddsInput(g.code, "hcp", 1, "odds")}</label>
-      <label>${esc(a.short)} ${oddsInput(g.code, "hcp", 2, "odds")}</label>
-      <span class="lbl">Total</span>
-      <label>line ${oddsInput(g.code, "tot", 0, "160.5", "0.5")}</label>
-      <label>over ${oddsInput(g.code, "tot", 1, "odds")}</label>
-      <label>under ${oddsInput(g.code, "tot", 2, "odds")}</label>
+      <span class="lbl">${L("Handicap", "Fora")}</span>
+      <label>${esc(h.short)} ${L("line", "linija")} ${oddsInput(g.code, "hcp", 0, "-4.5", "0.5")}</label>
+      <label>${esc(h.short)} ${oddsInput(g.code, "hcp", 1, L("odds", "koef."))}</label>
+      <label>${esc(a.short)} ${oddsInput(g.code, "hcp", 2, L("odds", "koef."))}</label>
+      <span class="lbl">${L("Total", "Totalas")}</span>
+      <label>${L("line", "linija")} ${oddsInput(g.code, "tot", 0, "160.5", "0.5")}</label>
+      <label>${L("over", "daugiau")} ${oddsInput(g.code, "tot", 1, L("odds", "koef."))}</label>
+      <label>${L("under", "mažiau")} ${oddsInput(g.code, "tot", 2, L("odds", "koef."))}</label>
     </div>
     <div class="sel-table"></div>
   </div>`;
@@ -489,12 +498,12 @@ function gameCard(g) {
 function selTable(sels) {
   if (!sels.length) return "";
   return `<div class="table-wrap"><table>
-    <thead><tr><th class="left">Bet</th><th>Odds</th><th>Bookmaker</th><th>Model</th><th>Used</th><th>Value</th><th>Stake</th><th></th></tr></thead>
+    <thead><tr><th class="left">${L("Bet", "Statymas")}</th><th>${L("Odds", "Koef.")}</th><th>${L("Bookmaker", "Lažybų bendr.")}</th><th>${L("Model", "Modelis")}</th><th>${L("Used", "Naudojama")}</th><th>${L("Value", "Vertė")}</th><th>${L("Stake", "Suma")}</th><th></th></tr></thead>
     <tbody>${sels.map(s => `<tr class="${isValue(s) ? "value" : ""}">
       <td class="left">${esc(s.label)}</td><td>${s.odds.toFixed(2)}</td>
       <td>${s.fair == null ? "–" : pct(s.fair)}</td><td>${pct(s.model)}</td><td>${pct(s.pWin)}</td>
       <td>${evText(s.ev)}</td><td>${s.stake ? s.stake.toFixed(2) : "–"}</td>
-      <td>${s.stake ? `<button class="link" data-add='${esc(JSON.stringify({ code: s.game.code, market: s.market, side: s.side, line: s.line, odds: s.odds, stake: s.stake, label: s.label }))}'>+ my bets</button>` : ""}</td>
+      <td>${s.stake ? `<button class="link" data-add='${esc(JSON.stringify({ code: s.game.code, market: s.market, side: s.side, line: s.line, odds: s.odds, stake: s.stake, label: s.label }))}'>${L("+ my bets", "+ į mano statymus")}</button>` : ""}</td>
     </tr>`).join("")}</tbody>
   </table></div>`;
 }
@@ -508,42 +517,52 @@ function roundTabs(page, current) {
   const nr = nextRound();
   if (!nr) return "";
   const rounds = [nr, nr + 1].filter(r => upcoming.some(g => g.round === r));
-  return `<div class="controls">${rounds.map(r => `<a class="tab ${r === current ? "active" : ""}" href="#${page}/${r}">Round ${r}</a>`).join("")}
-    ${current !== nr ? `<span class="note">Round ${current} uses today's ratings; they change after round ${nr} is played.</span>` : ""}</div>`;
+  return `<div class="controls">${rounds.map(r => `<a class="tab ${r === current ? "active" : ""}" href="#${page}/${r}">${L(`Round ${r}`, `${r} turas`)}</a>`).join("")}
+    ${current !== nr ? `<span class="note">${L(`Round ${current} uses today's ratings; they change after round ${nr} is played.`,
+      `${current} turui naudojami šiandienos reitingai; jie pasikeis po ${nr} turo.`)}</span>` : ""}</div>`;
 }
 
 pages.bets = params => {
   const nr = chosenRound(params);
-  if (!nr) return `<div id="betsPage"><h1>Betting</h1><div class="card"><p class="muted">No upcoming games.</p></div>
+  if (!nr) return `<div id="betsPage"><h1>${L("Betting", "Statymai")}</h1><div class="card"><p class="muted">${L("No upcoming games.", "Artimiausių rungtynių nėra.")}</p></div>
     <div id="myBets">${myBetsCard()}</div><div id="history">${historyCard()}</div></div>`;
   const games = upcoming.filter(g => g.round === nr);
   const s = betSettings;
-  return `<div id="betsPage"><h1>Betting — Round ${nr}</h1>${roundTabs("bets", nr)}
+  return `<div id="betsPage"><h1>${L(`Betting — Round ${nr}`, `Statymai — ${nr} turas`)}</h1>${roundTabs("bets", nr)}
     <div class="card">
-      ${published.source ? `<p class="note" style="margin-top:0">Odds already filled in: ${esc(published.source)}, ${esc(published.taken)}
-        (winner only). Change them if the price has moved.</p>` : ""}
-      <p style="margin-top:0">Each game is simulated ${SIMS.toLocaleString("en")} times from the model's prediction, with
+      ${published.source ? `<p class="note" style="margin-top:0">${L(`Odds already filled in: ${esc(published.source)}, ${esc(published.taken)}
+        (winner only). Change them if the price has moved.`, `Koeficientai jau įrašyti: ${esc(published.source)}, ${esc(published.taken)}
+        (tik nugalėtojas). Pakeiskite, jei kaina pasikeitė.`)}</p>` : ""}
+      <p style="margin-top:0">${L(`Each game is simulated ${SIMS.toLocaleString("en")} times from the model's prediction, with
         the spread of real results around its predictions measured on 1,063 past games
         (final score, overtime included). Type in the bookmaker's
-        decimal odds; bets where the model sees value are highlighted with a suggested stake.</p>
+        decimal odds; bets where the model sees value are highlighted with a suggested stake.`,
+        `Kiekvienos rungtynės simuliuojamos ${SIMS.toLocaleString("lt")} kartų pagal modelio prognozę, su tikrų rezultatų
+        sklaida, išmatuota 1 063 praėjusiose rungtynėse (galutinis rezultatas, su pratęsimais). Įveskite lažybų bendrovės
+        dešimtainius koeficientus; statymai, kuriuose modelis mato vertę, paryškinami su siūloma suma.`)}</p>
       <div class="controls settings">
-        <label>Bankroll <input type="number" id="sBankroll" min="0" step="10" value="${s.bankroll}"></label>
-        <label>Model weight <input type="number" id="sWeight" min="0" max="100" step="10" value="${s.modelWeight}">%</label>
-        <label>Min value <input type="number" id="sEdge" min="0" step="1" value="${s.minEdge}">%</label>
+        <label>${L("Bankroll", "Bankas")} <input type="number" id="sBankroll" min="0" step="10" value="${s.bankroll}"></label>
+        <label>${L("Model weight", "Modelio svoris")} <input type="number" id="sWeight" min="0" max="100" step="10" value="${s.modelWeight}">%</label>
+        <label>${L("Min value", "Min. vertė")} <input type="number" id="sEdge" min="0" step="1" value="${s.minEdge}">%</label>
         <label>Kelly <input type="number" id="sKelly" min="0" max="1" step="0.05" value="${s.kelly}"></label>
-        <label>Max stake <input type="number" id="sMax" min="0" step="0.5" value="${s.maxPct}">% of bankroll</label>
+        <label>${L("Max stake", "Maks. suma")} <input type="number" id="sMax" min="0" step="0.5" value="${s.maxPct}">${L("% of bankroll", "% banko")}</label>
       </div>
-      <p class="note">
+      <p class="note">${L(`
         <b>Bookmaker</b> = the bookmaker's chance with its margin removed. <b>Model</b> = simulation.
         <b>Used</b> = blend of both by "model weight": the bookmaker follows the news more closely than the model.
-        <b>Value</b> = expected return per 1 € staked. <b>Stake</b> = ${s.kelly} Kelly, at most ${s.maxPct}% of bankroll.
+        <b>Value</b> = expected return per 1 € staked. <b>Stake</b> = ${s.kelly} Kelly, at most ${s.maxPct}% of bankroll.`, `
+        <b>Lažybų bendr.</b> = lažybų bendrovės tikimybė be maržos. <b>Modelis</b> = simuliacija.
+        <b>Naudojama</b> = abiejų mišinys pagal „modelio svorį“: lažybų bendrovė naujienas seka atidžiau nei modelis.
+        <b>Vertė</b> = tikėtina grąža nuo 1 € statymo. <b>Suma</b> = ${s.kelly} Kelly, ne daugiau ${s.maxPct}% banko.`)}
       </p>
     </div>
     <div class="card">
-      <h2>Odds template</h2>
-      <p class="note" style="margin-top:0">Faster than typing: copy the template, fill in TopSport's odds (in a notes app or
-        right here), then paste it back below and press Apply. The same text can be pasted into a chat with Claude.</p>
-      <div class="controls"><button id="copyTemplate">Copy template</button><button class="primary" id="applyTemplate">Apply</button>
+      <h2>${L("Odds template", "Koeficientų šablonas")}</h2>
+      <p class="note" style="margin-top:0">${L(`Faster than typing: copy the template, fill in TopSport's odds (in a notes app or
+        right here), then paste it back below and press Apply. The same text can be pasted into a chat with Claude.`,
+        `Greičiau nei vesti po vieną: nukopijuokite šabloną, įrašykite TopSport koeficientus (užrašuose arba čia pat),
+        įklijuokite atgal ir spauskite „Taikyti“. Tą patį tekstą galima įklijuoti ir į pokalbį su Claude.`)}</p>
+      <div class="controls"><button id="copyTemplate">${L("Copy template", "Kopijuoti šabloną")}</button><button class="primary" id="applyTemplate">${L("Apply", "Taikyti")}</button>
         <span id="templateMsg" class="note"></span></div>
       <textarea id="templateBox" rows="8" spellcheck="false">${esc(oddsTemplate(games))}</textarea>
     </div>
@@ -552,17 +571,19 @@ pages.bets = params => {
     <div id="myBets">${myBetsCard()}</div>
     <div id="history">${historyCard()}</div>
     <div class="card">
-      <h2>Your data</h2>
-      <p class="note" style="margin-top:0">Odds history, bets and line-ups are saved in this browser only.
-        Export a file to keep a backup or to move them to your phone; importing adds to what is here.</p>
+      <h2>${L("Your data", "Jūsų duomenys")}</h2>
+      <p class="note" style="margin-top:0">${L(`Odds history, bets and line-ups are saved in this browser only.
+        Export a file to keep a backup or to move them to your phone; importing adds to what is here.`,
+        `Koeficientų istorija, statymai ir sudėtys saugomi tik šioje naršyklėje. Eksportuokite failą atsarginei kopijai
+        arba perkėlimui į telefoną; importuojant duomenys pridedami prie esamų.`)}</p>
       <div class="controls" style="margin-bottom:0">
-        <button id="exportBtn">Export</button>
-        <label class="button-like">Import <input type="file" id="importFile" accept="application/json,.json" hidden></label>
+        <button id="exportBtn">${L("Export", "Eksportuoti")}</button>
+        <label class="button-like">${L("Import", "Importuoti")} <input type="file" id="importFile" accept="application/json,.json" hidden></label>
       </div>
     </div>
     <div class="card note">
-      <h2>Read this before betting</h2>
-      <p>The model picks about 67% of winners, but bookmakers' prices are usually at least as good, and their
+      <h2>${L("Read this before betting", "Perskaitykite prieš statydami")}</h2>
+      ${L(`<p>The model picks about 67% of winners, but bookmakers' prices are usually at least as good, and their
         margin (typically 5–8%) has to be beaten first. "Value" here means the model disagrees with the bookmaker;
         it is not a guarantee. The model only knows who missed each team's latest game: tick injured key players
         yourself from the news before betting. On past seasons, knowing the line-ups improved the model only a
@@ -570,7 +591,16 @@ pages.bets = params => {
         Over a few rounds results are mostly luck; keep the log below to see whether it works over 100+ bets.</p>
       <p>Totals (over/under) are the weakest part: on past seasons the model missed the total by 13.3 points on
         average, barely better than just using the league average (13.9). Winner and handicap bets rest on firmer ground.</p>
-      <p>Bet only money you can afford to lose. Help in Lithuania: Lošimų priežiūros tarnyba, tel. 8 800 222 99 (free).</p>
+      <p>Bet only money you can afford to lose. Help in Lithuania: Lošimų priežiūros tarnyba, tel. 8 800 222 99 (free).</p>`,
+      `<p>Modelis atspėja maždaug 67 % nugalėtojų, bet lažybų bendrovių kainos dažniausiai bent tokios pat geros, o jų
+        maržą (paprastai 5–8 %) pirmiausia reikia įveikti. „Vertė“ čia reiškia, kad modelis nesutinka su lažybų bendrove;
+        tai ne garantija. Modelis žino tik, kas praleido paskutines komandos rungtynes: traumuotus pagrindinius žaidėjus
+        pažymėkite patys pagal naujienas. Praėjusiuose sezonuose žinomos sudėtys modelį pagerino tik šiek tiek
+        (nugalėtojai 66,6 % → 66,8 %): lažybų bendrovės į traumų naujienas reaguoja greitai, todėl pranašumas yra greitume.
+        Per kelis turus rezultatus daugiausia lemia sėkmė; veskite žurnalą ir vertinkite po 100+ statymų.</p>
+      <p>Totalai (daugiau/mažiau) yra silpniausia vieta: praėjusiuose sezonuose modelis taškų sumą prašaudavo vidutiniškai
+        13,3 taško, vos geriau nei tiesiog lygos vidurkis (13,9). Nugalėtojo ir foros statymai remiasi tvirtesniu pagrindu.</p>
+      <p>Statykite tik tiek, kiek galite sau leisti prarasti. Pagalba: Lošimų priežiūros tarnyba, tel. 8 800 222 99 (nemokamai).</p>`)}
     </div></div>`;
 };
 
@@ -589,11 +619,13 @@ setup.bets = params => {
     const all = games.flatMap(selections);
     const best = all.filter(isValue).sort((a, b) => b.ev - a.ev);
     const total = best.reduce((t, s) => t + s.stake, 0);
-    box.innerHTML = `<h2>Best value this round</h2>` + (!all.length
-      ? "<p class='muted'>Type in bookmaker odds below to compare them with the model.</p>"
+    box.innerHTML = `<h2>${L("Best value this round", "Geriausia šio turo vertė")}</h2>` + (!all.length
+      ? `<p class='muted'>${L("Type in bookmaker odds below to compare them with the model.", "Įveskite koeficientus žemiau, kad palygintumėte juos su modeliu.")}</p>`
       : best.length
-        ? selTable(best) + `<p class="note">${best.length} bet${best.length > 1 ? "s" : ""}, total stake ${total.toFixed(2)}.</p>`
-        : `<p class="muted">No bet reaches ${betSettings.minEdge}% value at the odds entered.</p>`);
+        ? selTable(best) + `<p class="note">${L(`${best.length} bet${best.length > 1 ? "s" : ""}, total stake ${total.toFixed(2)}.`,
+            `Statymų: ${best.length}, bendra suma ${total.toFixed(2)}.`)}</p>`
+        : `<p class="muted">${L(`No bet reaches ${betSettings.minEdge}% value at the odds entered.`,
+            `Prie įvestų koeficientų nė vienas statymas nepasiekia ${betSettings.minEdge}% vertės.`)}</p>`);
   };
   const renderAll = () => {
     document.querySelectorAll(".bet-game").forEach(renderGame);
@@ -646,13 +678,14 @@ setup.bets = params => {
     box.value = oddsTemplate(games);
     box.select();
     (navigator.clipboard ? navigator.clipboard.writeText(box.value) : Promise.reject())
-      .then(() => { msg.textContent = "Copied."; }, () => { document.execCommand("copy"); msg.textContent = "Copied."; });
+      .then(() => { msg.textContent = L("Copied.", "Nukopijuota."); }, () => { document.execCommand("copy"); msg.textContent = L("Copied.", "Nukopijuota."); });
   });
   document.getElementById("applyTemplate")?.addEventListener("click", () => {
     const n = applyTemplate(box.value);
     route(); // redraw everything with the new odds
     const m = document.getElementById("templateMsg");
-    if (m) m.textContent = n ? `Odds updated for ${n} game${n > 1 ? "s" : ""}.` : "No odds found: keep the #number lines.";
+    if (m) m.textContent = n ? L(`Odds updated for ${n} game${n > 1 ? "s" : ""}.`, `Koeficientai atnaujinti: ${n} rungt.`)
+      : L("No odds found: keep the #number lines.", "Koeficientų nerasta: palikite #numerio eilutes.");
   });
   document.getElementById("importFile")?.addEventListener("change", e => e.target.files[0] && importData(e.target.files[0]));
 
@@ -680,7 +713,7 @@ setup.bets = params => {
     }
     if (add) {
       myBets.push({ id: Date.now(), placed: new Date().toISOString(), ...JSON.parse(add.dataset.add) });
-      add.textContent = "✓ added";
+      add.textContent = L("✓ added", "✓ pridėta");
       add.disabled = true;
     } else if (del) {
       myBets = myBets.filter(b => String(b.id) !== del.dataset.del);

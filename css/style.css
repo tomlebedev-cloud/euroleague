@@ -169,3 +169,6 @@ ul.why { margin: 4px 0 0; padding-left: 20px; font-size: .88rem; }
 ul.why li { margin: 2px 0; }
 a.tab { text-decoration: none; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); }
 a.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lang { display: flex; gap: 2px; order: 3; }
+.lang button { padding: 3px 8px; font-size: .8rem; font-weight: 700; background: transparent; color: #c9ccd3; border-color: rgba(255,255,255,.2); }
+.lang button.active { background: var(--accent); border-color: var(--accent); color: #fff; }

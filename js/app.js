@@ -19,10 +19,43 @@ GAMES.forEach(g => { gameByCode[g.code] = g; });
 const played = GAMES.filter(g => g.score);
 const upcoming = GAMES.filter(g => !g.score);
 
+// ---------- Language: English (default) or Lithuanian, chosen in the header ----------
+let LANG = "en";
+try { if (localStorage.getItem("lang") === "lt") LANG = "lt"; } catch { /* no storage: English */ }
+const L = (en, lt) => (LANG === "lt" ? lt : en);
+const NAV = {
+  home: ["Home", "Pradžia"], standings: ["Standings", "Lentelė"], stats: ["Stats", "Statistika"],
+  teams: ["Teams", "Komandos"], schedule: ["Schedule", "Tvarkaraštis"], predictions: ["Predictions", "Prognozės"],
+  bets: ["Betting", "Statymai"], ticket: ["Ticket", "Bilietas"],
+};
+function applyLanguage() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll("nav a").forEach(a => { if (NAV[a.dataset.nav]) a.textContent = L(...NAV[a.dataset.nav]); });
+  document.querySelectorAll("[data-lang]").forEach(b => b.classList.toggle("active", b.dataset.lang === LANG));
+  document.getElementById("footerText").innerHTML = L(
+    `Data: official EuroLeague API · updated ${esc(UPDATED)} · run <code>python update_data.py</code> to refresh.
+     Not affiliated with EuroLeague Basketball.`,
+    `Duomenys: oficialus EuroLeague API · atnaujinta ${esc(UPDATED)} · atnaujinti: <code>python update_data.py</code>.
+     Nesusijęs su EuroLeague Basketball.`);
+}
+function setLanguage(lang) {
+  LANG = lang;
+  try { localStorage.setItem("lang", lang); } catch { /* only for this visit */ }
+  applyLanguage();
+  route();
+}
+
 // ---------- Helpers ----------
 const $app = document.getElementById("app");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const fmtDate = d => new Date(d.slice(0, 10) + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const LT_DAYS = ["sk", "pr", "an", "tr", "kt", "pn", "št"];
+const LT_MONTHS = ["saus.", "vas.", "kov.", "bal.", "geg.", "birž.", "liep.", "rugp.", "rugs.", "spal.", "lapkr.", "gruod."];
+const fmtDate = d => {
+  const date = new Date(d.slice(0, 10) + "T12:00:00");
+  return LANG === "lt"
+    ? `${LT_DAYS[date.getDay()]}, ${LT_MONTHS[date.getMonth()]} ${date.getDate()} d.`
+    : date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+};
 const fmtTime = d => d.slice(11, 16);
 const signed = n => (n > 0 ? "+" : "") + n;
 const num = (n, key) => key === "gp" ? n : Number(n).toFixed(1);
@@ -61,8 +94,8 @@ function standingsTable(rows, compact = false) {
   return `
     <div class="table-wrap"><table>
       <thead><tr>
-        <th>#</th><th class="left">Team</th><th>GP</th><th>W</th><th>L</th>
-        ${compact ? "" : "<th>PF</th><th>PA</th>"}<th>+/-</th>${compact ? "" : "<th>Form</th>"}
+        <th>#</th><th class="left">${L("Team", "Komanda")}</th><th>${L("GP", "R")}</th><th>${L("W", "P")}</th><th>${L("L", "Pr")}</th>
+        ${compact ? "" : `<th>${L("PF", "ĮT")}</th><th>${L("PA", "PT")}</th>`}<th>+/-</th>${compact ? "" : `<th>${L("Form", "Forma")}</th>`}
       </tr></thead>
       <tbody>
         ${rows.map((r, i) => `
@@ -76,7 +109,7 @@ function standingsTable(rows, compact = false) {
           </tr>`).join("")}
       </tbody>
     </table></div>
-    <div class="legend"><span class="l-po">Playoffs (1–6)</span><span class="l-pi">Play-In (7–10)</span></div>`;
+    <div class="legend"><span class="l-po">${L("Playoffs (1–6)", "Atkrintamosios (1–6)")}</span><span class="l-pi">Play-In (7–10)</span></div>`;
 }
 
 // ---------- Predictions ----------
@@ -115,7 +148,7 @@ function gameRow(g, showPrediction = false) {
     const [hs, as] = g.score;
     homeCls = hs > as ? "winner" : "loser";
     awayCls = as > hs ? "winner" : "loser";
-    middle = `${hs} – ${as}<small>Final · ${fmtDate(g.date)}</small>`;
+    middle = `${hs} – ${as}<small>${L("Final", "Baigta")} · ${fmtDate(g.date)}</small>`;
   } else if (showPrediction) {
     const p = predict(g.home, g.away, g.neutral);
     middle = `<span class="muted">${p.homePts} – ${p.awayPts}</span><small>${fmtDate(g.date)} · ${fmtTime(g.date)}</small>`;
@@ -145,50 +178,50 @@ const pages = {
       <div class="grid-2">
         <div>
           <div class="card">
-            <h2>Latest results${lr ? ` — Round ${lr}` : ""}</h2>
-            ${played.filter(g => g.round === lr).map(g => gameRow(g)).join("") || "<p class='muted'>No games played yet.</p>"}
+            <h2>${L("Latest results", "Paskutiniai rezultatai")}${lr ? ` — ${L(`Round ${lr}`, `${lr} turas`)}` : ""}</h2>
+            ${played.filter(g => g.round === lr).map(g => gameRow(g)).join("") || `<p class='muted'>${L("No games played yet.", "Rungtynių dar nebuvo.")}</p>`}
           </div>
           <div class="card">
-            <h2>Next games${nr ? ` — Round ${nr}` : ""}</h2>
-            ${nr ? upcoming.filter(g => g.round === nr).map(g => gameRow(g, true)).join("") : "<p class='muted'>Season finished.</p>"}
-            <p class="note">Grey scores are predictions. <a href="#predictions">See all predictions →</a></p>
+            <h2>${L("Next games", "Artimiausios rungtynės")}${nr ? ` — ${L(`Round ${nr}`, `${nr} turas`)}` : ""}</h2>
+            ${nr ? upcoming.filter(g => g.round === nr).map(g => gameRow(g, true)).join("") : `<p class='muted'>${L("Season finished.", "Sezonas baigėsi.")}</p>`}
+            <p class="note">${L("Grey scores are predictions.", "Pilki rezultatai yra prognozės.")} <a href="#predictions">${L("See all predictions →", "Visos prognozės →")}</a></p>
           </div>
         </div>
         <div>
           <div class="card">
-            <h2>Standings</h2>
+            <h2>${L("Standings", "Turnyrinė lentelė")}</h2>
             ${standingsTable(top, true)}
-            <p class="note"><a href="#standings">Full standings →</a></p>
+            <p class="note"><a href="#standings">${L("Full standings →", "Visa lentelė →")}</a></p>
           </div>
           <div class="card">
-            <h2>Leaders</h2>
-            ${leaderList("pts", "Points")}${leaderList("reb", "Rebounds")}${leaderList("ast", "Assists")}${leaderList("pir", "PIR")}
-            <p class="note"><a href="#stats">All player stats →</a></p>
+            <h2>${L("Leaders", "Lyderiai")}</h2>
+            ${leaderList("pts", L("Points", "Taškai"))}${leaderList("reb", L("Rebounds", "Atkovoti kamuoliai"))}${leaderList("ast", L("Assists", "Rezultatyvūs perdavimai"))}${leaderList("pir", L("PIR", "Naudingumas (PIR)"))}
+            <p class="note"><a href="#stats">${L("All player stats →", "Visa žaidėjų statistika →")}</a></p>
           </div>
         </div>
       </div>`;
   },
 
   standings() {
-    return `<h1>Standings</h1><div class="card">${standingsTable(computeStandings())}</div>`;
+    return `<h1>${L("Standings", "Turnyrinė lentelė")}</h1><div class="card">${standingsTable(computeStandings())}</div>`;
   },
 
   stats() {
-    return `<h1>Player statistics</h1>
+    return `<h1>${L("Player statistics", "Žaidėjų statistika")}</h1>
       <div class="controls">
-        <label>Team
+        <label>${L("Team", "Komanda")}
           <select id="teamFilter">
-            <option value="">All teams</option>
+            <option value="">${L("All teams", "Visos komandos")}</option>
             ${TEAMS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}
           </select>
         </label>
-        <span class="note">Per-game averages. Click a column header to sort.</span>
+        <span class="note">${L("Per-game averages. Click a column header to sort.", "Vidurkiai per rungtynes. Paspauskite stulpelio pavadinimą, kad surikiuotumėte.")}</span>
       </div>
       <div class="card" id="statsTable"></div>`;
   },
 
   teams() {
-    return `<h1>Teams</h1>
+    return `<h1>${L("Teams", "Komandos")}</h1>
       <div class="grid-teams">
         ${TEAMS.map(t => `
           <a class="team-card" href="#team/${t.id}">${badge(t)}
@@ -205,29 +238,29 @@ const pages = {
     const r = st[pos];
     const games = GAMES.filter(g => g.home === id || g.away === id);
     return `
-      <p><a href="#teams">← All teams</a></p>
+      <p><a href="#teams">${L("← All teams", "← Visos komandos")}</a></p>
       <h1 class="team-title">${badge(t, "lg")} ${esc(t.name)}</h1>
-      <p class="muted">${t.fullName && t.fullName !== t.name ? `${esc(t.fullName)} · ` : ""}${esc(t.city)}, ${esc(t.country)}${t.coach ? ` · Coach: ${esc(t.coach)}` : ""}<br>
-        Position ${pos + 1} · ${r.w}–${r.l} · ${signed(r.diff)} point difference</p>
+      <p class="muted">${t.fullName && t.fullName !== t.name ? `${esc(t.fullName)} · ` : ""}${esc(t.city)}, ${esc(t.country)}${t.coach ? ` · ${L("Coach", "Treneris")}: ${esc(t.coach)}` : ""}<br>
+        ${L(`Position ${pos + 1}`, `${pos + 1} vieta`)} · ${r.w}–${r.l} · ${signed(r.diff)} ${L("point difference", "taškų skirtumas")}</p>
       <div class="card">
-        <h2>Players</h2>
+        <h2>${L("Players", "Žaidėjai")}</h2>
         ${playerTable(t.players, false)}
       </div>
       <div class="card">
-        <h2>Games</h2>
+        <h2>${L("Games", "Rungtynės")}</h2>
         ${games.map(g => gameRow(g, true)).join("")}
       </div>`;
   },
 
   schedule() {
     const rounds = [...new Set(GAMES.map(g => g.round))].sort((a, b) => a - b);
-    return `<h1>Schedule & results</h1>
+    return `<h1>${L("Schedule & results", "Tvarkaraštis ir rezultatai")}</h1>
       <div class="controls">
-        <button id="prevRound">← Previous</button>
-        <select id="roundSelect">${rounds.map(r => `<option value="${r}">Round ${r}</option>`).join("")}</select>
-        <button id="nextRound">Next →</button>
-        <label>Team
-          <select id="schedTeam"><option value="">All teams</option>
+        <button id="prevRound">${L("← Previous", "← Ankstesnis")}</button>
+        <select id="roundSelect">${rounds.map(r => `<option value="${r}">${L(`Round ${r}`, `${r} turas`)}</option>`).join("")}</select>
+        <button id="nextRound">${L("Next →", "Kitas →")}</button>
+        <label>${L("Team", "Komanda")}
+          <select id="schedTeam"><option value="">${L("All teams", "Visos komandos")}</option>
             ${TEAMS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}
           </select>
         </label>
@@ -240,8 +273,8 @@ const pages = {
     if (!g) return notFound();
     const h = teamById[g.home], a = teamById[g.away];
     const middle = g.score
-      ? `<div class="big">${g.score[0]} – ${g.score[1]}</div><div class="muted">Final</div>`
-      : `<div class="big muted">vs</div><div class="muted">${fmtTime(g.date)} local time</div>`;
+      ? `<div class="big">${g.score[0]} – ${g.score[1]}</div><div class="muted">${L("Final", "Baigta")}</div>`
+      : `<div class="big muted">vs</div><div class="muted">${fmtTime(g.date)} ${L("local time", "vietos laiku")}</div>`;
     const earlier = played.filter(x => x !== g &&
       ((x.home === g.home && x.away === g.away) || (x.home === g.away && x.away === g.home)));
     let body;
@@ -250,9 +283,9 @@ const pages = {
       const hit = pr && (pr[2] >= 0.5) === (g.score[0] > g.score[1]);
       body = `
         ${pr ? `<div class="card">
-          <h2>Pre-game prediction <span class="${hit ? "plus" : "minus"}">${hit ? "✓ correct" : "✗ wrong"}</span></h2>
+          <h2>${L("Pre-game prediction", "Prognozė prieš rungtynes")} <span class="${hit ? "plus" : "minus"}">${hit ? L("✓ correct", "✓ pasitvirtino") : L("✗ wrong", "✗ nepasitvirtino")}</span></h2>
           ${probBar(g.home, g.away, pr[2])}
-          <p>Predicted: <b>${esc(h.name)} ${pr[0]} – ${pr[1]} ${esc(a.name)}</b> · Final: ${g.score[0]} – ${g.score[1]}</p>
+          <p>${L("Predicted", "Prognozė")}: <b>${esc(h.name)} ${pr[0]} – ${pr[1]} ${esc(a.name)}</b> · ${L("Final", "Rezultatas")}: ${g.score[0]} – ${g.score[1]}</p>
         </div>` : ""}
         ${quartersTable(g)}
         <div class="card"><h2>${esc(h.name)}</h2>${boxTable(g.box.home)}</div>
@@ -261,26 +294,27 @@ const pages = {
       const p = predict(g.home, g.away, g.neutral);
       body = `
         <div class="card">
-          <h2>Prediction</h2>
+          <h2>${L("Prediction", "Prognozė")}</h2>
           ${probBar(g.home, g.away, p.homeWin)}
-          <p>Predicted score: <b>${esc(h.name)} ${p.homePts} – ${p.awayPts} ${esc(a.name)}</b></p>
-          <p class="note">Based on both teams' ratings (this season's results, last season and summer roster changes)
-            plus ${MODEL.hca} points home advantage. <a href="#predictions">How it works</a></p>
+          <p>${L("Predicted score", "Prognozuojamas rezultatas")}: <b>${esc(h.name)} ${p.homePts} – ${p.awayPts} ${esc(a.name)}</b></p>
+          <p class="note">${L(`Based on both teams' ratings (this season's results, last season and summer roster changes)
+            plus ${MODEL.hca} points home advantage.`, `Pagal abiejų komandų reitingus (šio sezono rezultatai, praėjęs sezonas ir vasaros
+            sudėties pokyčiai) ir ${MODEL.hca} taškų namų aikštės pranašumą.`)} <a href="#predictions">${L("How it works", "Kaip tai veikia")}</a></p>
         </div>
-        ${earlier.length ? `<div class="card"><h2>Earlier meetings this season</h2>${earlier.map(x => gameRow(x)).join("")}</div>` : ""}
+        ${earlier.length ? `<div class="card"><h2>${L("Earlier meetings this season", "Ankstesnės šio sezono akistatos")}</h2>${earlier.map(x => gameRow(x)).join("")}</div>` : ""}
         <div class="grid-2">
           <div class="card"><h2>${esc(h.name)}</h2>${playerTable(h.players, false, true)}</div>
           <div class="card"><h2>${esc(a.name)}</h2>${playerTable(a.players, false, true)}</div>
         </div>`;
     }
     return `
-      <p><a href="#schedule">← Schedule</a></p>
+      <p><a href="#schedule">${L("← Schedule", "← Tvarkaraštis")}</a></p>
       <div class="card">
-        <p class="muted center" style="margin-top:0">Round ${g.round} · ${fmtDate(g.date)}${g.venue ? ` · ${esc(g.venue)}` : ""}</p>
+        <p class="muted center" style="margin-top:0">${L(`Round ${g.round}`, `${g.round} turas`)} · ${fmtDate(g.date)}${g.venue ? ` · ${esc(g.venue)}` : ""}</p>
         <div class="scoreboard">
-          <div><a href="#team/${h.id}">${badge(h, "xl")}</a><div><b>${esc(h.name)}</b></div><div class="muted">Home</div></div>
+          <div><a href="#team/${h.id}">${badge(h, "xl")}</a><div><b>${esc(h.name)}</b></div><div class="muted">${L("Home", "Namuose")}</div></div>
           <div>${middle}</div>
-          <div><a href="#team/${a.id}">${badge(a, "xl")}</a><div><b>${esc(a.name)}</b></div><div class="muted">Away</div></div>
+          <div><a href="#team/${a.id}">${badge(a, "xl")}</a><div><b>${esc(a.name)}</b></div><div class="muted">${L("Away", "Svečiuose")}</div></div>
         </div>
       </div>
       ${body}`;
@@ -290,62 +324,71 @@ const pages = {
     const rounds = [...new Set(upcoming.map(g => g.round))].sort((a, b) => a - b).slice(0, 2);
     const rec = predictionRecord();
     const lr = latestRound(), lrRec = predictionRecord(played.filter(g => g.round === lr));
-    return `<h1>Predictions</h1>
+    return `<h1>${L("Predictions", "Prognozės")}</h1>
       ${rec.total ? `<div class="card">
-        <h2>Track record this season</h2>
-        <p class="record"><b>${rec.right} of ${rec.total}</b> winners picked correctly (${Math.round(100 * rec.right / rec.total)}%)
-          · Round ${lr}: ${lrRec.right}/${lrRec.total}</p>
-        <p class="note">Every played game was predicted using only the games before it. Over the last three
-          seasons this model picked 67% of winners; early-season rounds are the hardest.</p>
+        <h2>${L("Track record this season", "Šio sezono rezultatai")}</h2>
+        <p class="record">${L(`<b>${rec.right} of ${rec.total}</b> winners picked correctly`, `Teisingai atspėta <b>${rec.right} iš ${rec.total}</b> nugalėtojų`)} (${Math.round(100 * rec.right / rec.total)}%)
+          · ${L(`Round ${lr}`, `${lr} turas`)}: ${lrRec.right}/${lrRec.total}</p>
+        <p class="note">${L(`Every played game was predicted using only the games before it. Over the last three
+          seasons this model picked 67% of winners; early-season rounds are the hardest.`, `Kiekvienos sužaistos rungtynės prognozuotos
+          naudojant tik ankstesnes rungtynes. Per tris praėjusius sezonus modelis atspėjo 67 % nugalėtojų; sezono pradžia sunkiausia.`)}</p>
       </div>` : ""}
       <div class="card">
-        <h2>Pick any match-up</h2>
+        <h2>${L("Pick any match-up", "Pasirinkite bet kurią porą")}</h2>
         <div class="controls">
-          <label>Home <select id="pHome">${TEAMS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></label>
-          <label>Away <select id="pAway">${TEAMS.map((t, i) => `<option value="${t.id}" ${i === 1 ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
+          <label>${L("Home", "Namuose")} <select id="pHome">${TEAMS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></label>
+          <label>${L("Away", "Svečiuose")} <select id="pAway">${TEAMS.map((t, i) => `<option value="${t.id}" ${i === 1 ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
         </div>
         <div id="customPrediction"></div>
       </div>
       ${rounds.map((r, i) => `
         <div class="card">
-          <h2>Round ${r}${i === 0 ? " — next up" : ""}</h2>
+          <h2>${L(`Round ${r}`, `${r} turas`)}${i === 0 ? L(" — next up", " — artimiausias") : ""}</h2>
           ${upcoming.filter(g => g.round === r).map(g => {
             const p = predict(g.home, g.away, g.neutral);
             const fav = p.homeWin >= 0.5 ? teamById[g.home] : teamById[g.away];
             return `${gameRow(g, true)}${probBar(g.home, g.away, p.homeWin)}
-              <p class="note" style="margin-top:0">Pick: <span class="pick">${esc(fav.name)}</span></p>`;
+              <p class="note" style="margin-top:0">${L("Pick", "Spėjimas")}: <span class="pick">${esc(fav.name)}</span></p>`;
           }).join("")}
-        </div>`).join("") || "<div class='card'><p class='muted'>No upcoming games.</p></div>"}
+        </div>`).join("") || `<div class='card'><p class='muted'>${L("No upcoming games.", "Artimiausių rungtynių nėra.")}</p></div>`}
       <div class="card note">
-        <h2>How it works</h2>
-        <p>Every team has an attack and a defence rating: how many points it scores and allows compared to an
+        <h2>${L("How it works", "Kaip tai veikia")}</h2>
+        ${L(`<p>Every team has an attack and a defence rating: how many points it scores and allows compared to an
           average EuroLeague team, adjusted for the strength of the opponents it played.</p>
         <p>Before the season, ratings start from last season's level, adjusted for summer transfers: players
           who arrived or left are valued by their EuroLeague production (PIR) last season. As games are played,
           this season's results take over, with recent games counting more.</p>
         <p>For a game, both teams' ratings give a predicted score, the home team gets +${MODEL.hca} points,
           and the margin is turned into a win chance. All settings were chosen by testing on the 2023–24,
-          2024–25 and 2025–26 seasons. Later rounds are on the <a href="#schedule">schedule</a> page.</p>
+          2024–25 and 2025–26 seasons. Later rounds are on the <a href="#schedule">schedule</a> page.</p>`,
+        `<p>Kiekviena komanda turi puolimo ir gynybos reitingą: kiek taškų ji pelno ir praleidžia, palyginti su
+          vidutine Eurolygos komanda, atsižvelgiant į varžovų stiprumą.</p>
+        <p>Prieš sezoną reitingai prasideda nuo praėjusio sezono lygio, pakoreguoto pagal vasaros perėjimus:
+          atvykę ir išvykę žaidėjai vertinami pagal jų praėjusio sezono Eurolygos naudingumą (PIR). Vykstant sezonui
+          vis daugiau lemia šio sezono rezultatai, o naujesnės rungtynės svarbesnės.</p>
+        <p>Rungtynėms abiejų komandų reitingai duoda prognozuojamą rezultatą, namų komanda gauna +${MODEL.hca} taškus,
+          o skirtumas paverčiamas pergalės tikimybe. Visi nustatymai parinkti tikrinant 2023–24, 2024–25 ir 2025–26
+          sezonuose. Vėlesni turai yra <a href="#schedule">tvarkaraštyje</a>.</p>`)}
       </div>`;
   },
 };
 
 function notFound() {
-  return `<h1>Not found</h1><p><a href="#home">Back to home</a></p>`;
+  return `<h1>${L("Not found", "Puslapis nerastas")}</h1><p><a href="#home">${L("Back to home", "Į pradžią")}</a></p>`;
 }
 
 // ---------- Tables ----------
-const STAT_COLS = [
-  ["gp", "GP"], ["min", "MIN"], ["pts", "PTS"], ["reb", "REB"], ["ast", "AST"],
-  ["stl", "STL"], ["blk", "BLK"], ["pir", "PIR"],
+const STAT_COLS = () => [
+  ["gp", L("GP", "R")], ["min", "MIN"], ["pts", L("PTS", "TŠK")], ["reb", L("REB", "AK")], ["ast", L("AST", "RP")],
+  ["stl", L("STL", "PER")], ["blk", L("BLK", "BL")], ["pir", L("PIR", "NAUD")],
 ];
 
 function playerTable(list, showTeam, compact = false, sortKey = null) {
-  const cols = compact ? STAT_COLS.filter(([k]) => ["gp", "pts", "reb", "ast", "pir"].includes(k)) : STAT_COLS;
+  const cols = compact ? STAT_COLS().filter(([k]) => ["gp", "pts", "reb", "ast", "pir"].includes(k)) : STAT_COLS();
   return `<div class="table-wrap"><table>
     <thead><tr>
-      ${showTeam ? "" : "<th>#</th>"}<th class="left">Player</th>${compact ? "" : "<th class='left'>Pos</th>"}
-      ${showTeam ? '<th class="left">Team</th>' : ""}
+      ${showTeam ? "" : "<th>#</th>"}<th class="left">${L("Player", "Žaidėjas")}</th>${compact ? "" : `<th class='left'>${L("Pos", "Poz.")}</th>`}
+      ${showTeam ? `<th class="left">${L("Team", "Komanda")}</th>` : ""}
       ${cols.map(([k, label]) => `<th class="${sortKey !== null ? "sortable" : ""} ${k === sortKey ? "sorted" : ""}" data-sort="${k}">${label}</th>`).join("")}
     </tr></thead>
     <tbody>
@@ -365,7 +408,7 @@ function boxTable(lines) {
   const fmtMin = m => m ? `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, "0")}` : "DNP";
   const sorted = [...lines].sort((a, b) => b[2] - a[2]);
   return `<div class="table-wrap"><table>
-    <thead><tr><th>#</th><th class="left">Player</th><th>MIN</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>PIR</th></tr></thead>
+    <thead><tr><th>#</th><th class="left">${L("Player", "Žaidėjas")}</th>${STAT_COLS().slice(1).map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
     <tbody>${sorted.map(l => `<tr class="${l[2] ? "" : "dnp"}">
       <td class="muted">${esc(l[1])}</td><td class="left">${esc(l[0])}</td><td>${fmtMin(l[2])}</td>
       ${l.slice(3).map(v => `<td>${l[2] ? v : ""}</td>`).join("")}
@@ -377,7 +420,7 @@ function quartersTable(g) {
   const periods = g.quarters[0].length;
   const label = i => i < 4 ? `Q${i + 1}` : `OT${periods > 5 ? i - 3 : ""}`;
   return `<div class="card"><div class="table-wrap"><table>
-    <thead><tr><th class="left">Team</th>${g.quarters[0].map((_, i) => `<th>${label(i)}</th>`).join("")}<th>Total</th></tr></thead>
+    <thead><tr><th class="left">${L("Team", "Komanda")}</th>${g.quarters[0].map((_, i) => `<th>${label(i)}</th>`).join("")}<th>${L("Total", "Iš viso")}</th></tr></thead>
     <tbody>${[g.home, g.away].map((id, s) => `<tr>
       <td class="left">${teamLink(id)}</td>${g.quarters[s].map(q => `<td>${q}</td>`).join("")}<td><b>${g.score[s]}</b></td>
     </tr>`).join("")}</tbody>
@@ -390,7 +433,7 @@ function leaderList(key, label) {
   return `<div style="margin-bottom:10px"><div class="round-title">${label}</div>
     ${top.map((p, i) => `<div class="leader">
       <span>${i + 1}. ${esc(p.name)} <span class="muted">${esc(teamById[p.team].short)}</span></span><b>${num(p[key])}</b></div>`).join("")
-      || "<span class='muted'>No games yet.</span>"}
+      || `<span class='muted'>${L("No games yet.", "Rungtynių dar nebuvo.")}</span>`}
   </div>`;
 }
 
@@ -402,7 +445,7 @@ const setup = {
     const box = document.getElementById("statsTable");
     const render = () => {
       const list = players.filter(p => p.gp && (!sel.value || p.team === sel.value)).sort((a, b) => b[sortKey] - a[sortKey]);
-      box.innerHTML = list.length ? playerTable(list, true, false, sortKey) : "<p class='muted'>No games played yet.</p>";
+      box.innerHTML = list.length ? playerTable(list, true, false, sortKey) : `<p class='muted'>${L("No games played yet.", "Rungtynių dar nebuvo.")}</p>`;
       box.querySelectorAll("th.sortable").forEach(th =>
         th.addEventListener("click", () => { sortKey = th.dataset.sort; render(); }));
     };
@@ -420,8 +463,8 @@ const setup = {
     const render = () => {
       const r = Number(sel.value);
       const games = GAMES.filter(g => g.round === r && (!teamSel.value || g.home === teamSel.value || g.away === teamSel.value));
-      box.innerHTML = `<h2>Round ${r}</h2>` + (games.map(g => gameRow(g, true)).join("") || "<p class='muted'>No games.</p>")
-        + (games.some(g => !g.score) ? "<p class='note'>Grey scores are predictions.</p>" : "");
+      box.innerHTML = `<h2>${L(`Round ${r}`, `${r} turas`)}</h2>` + (games.map(g => gameRow(g, true)).join("") || `<p class='muted'>${L("No games.", "Rungtynių nėra.")}</p>`)
+        + (games.some(g => !g.score) ? `<p class='note'>${L("Grey scores are predictions.", "Pilki rezultatai yra prognozės.")}</p>` : "");
       prev.disabled = sel.selectedIndex === 0;
       next.disabled = sel.selectedIndex === sel.options.length - 1;
     };
@@ -436,10 +479,10 @@ const setup = {
     const h = document.getElementById("pHome"), a = document.getElementById("pAway");
     const box = document.getElementById("customPrediction");
     const render = () => {
-      if (h.value === a.value) { box.innerHTML = "<p class='muted'>Choose two different teams.</p>"; return; }
+      if (h.value === a.value) { box.innerHTML = `<p class='muted'>${L("Choose two different teams.", "Pasirinkite dvi skirtingas komandas.")}</p>`; return; }
       const p = predict(h.value, a.value);
       box.innerHTML = `${probBar(h.value, a.value, p.homeWin)}
-        <p>Predicted score: <b>${esc(teamById[h.value].name)} ${p.homePts} – ${p.awayPts} ${esc(teamById[a.value].name)}</b></p>`;
+        <p>${L("Predicted score", "Prognozuojamas rezultatas")}: <b>${esc(teamById[h.value].name)} ${p.homePts} – ${p.awayPts} ${esc(teamById[a.value].name)}</b></p>`;
     };
     h.addEventListener("change", render);
     a.addEventListener("change", render);
@@ -458,6 +501,7 @@ function route() {
   window.scrollTo(0, 0);
 }
 
-document.getElementById("updated").textContent = UPDATED;
+document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => setLanguage(b.dataset.lang)));
+applyLanguage();
 window.addEventListener("hashchange", route);
 document.addEventListener("DOMContentLoaded", route); // after js/betting.js has added its page
