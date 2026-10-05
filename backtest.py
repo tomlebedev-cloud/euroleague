@@ -4,6 +4,7 @@ Measure prediction accuracy on past seasons.
     python backtest.py          # compare old vs current model
     python backtest.py --tune   # search model parameters (tuned on 2023-24 + 2024-25, checked on 2025-26)
     python backtest.py --spread # how far results land from predictions (model.SIM, used by the betting page)
+    python backtest.py --absences  # effect of missing players (model.ABSENCE); downloads box scores once
 
 Every game is predicted using only games played before it, exactly like the website does live.
 Past seasons are downloaded once into .cache/history/.
@@ -164,10 +165,90 @@ def spread():
     print(f"  currently in model.SIM: {model.SIM}")
 
 
+# ---------- missing players ----------
+_PRED = {}
+
+
+def season_predictions(season):
+    """-> [(game, predicted home points, predicted away points)], each made before the game"""
+    if season not in _PRED:
+        prior = model.preseason_prior(season, model.history_roster(season))
+        games = SEASONS[season]
+        teams = model.season_teams(games)
+        out = []
+        for date, day in itertools.groupby(games, key=lambda g: g["date"].date()):
+            day = list(day)
+            r = model.fit(games, teams, prior, as_of=day[0]["date"].replace(hour=0, minute=0))
+            out += [(g, *r.predict(g["home"], g["away"], g["neutral"])[:2]) for g in day]
+        _PRED[season] = out
+    return _PRED[season]
+
+
+def absence_rows(season, k=None):
+    """-> [(game, home pts, away pts, home key players out, away key players out)]. Uses who actually
+    played, like knowing the line-ups before tip-off."""
+    boxes = model.history_boxes(season)
+    av = model.Availability(model.history_player_totals(model.previous(season)))
+    out = {}
+    for g in SEASONS[season]:
+        box = boxes[g["code"]]
+        playing = {side: {c for c, secs, _ in box[side] if secs > 0} for side in ("home", "away")}
+        out[g["code"]] = (av.key_players_out(g["home"], playing["home"], k),
+                          av.key_players_out(g["away"], playing["away"], k))
+        av.add(g["home"], box["home"])
+        av.add(g["away"], box["away"])
+    return [(g, hp, ap, *out[g["code"]]) for g, hp, ap in season_predictions(season)]
+
+
+def fit_absence(rows):
+    """least squares: margin error = -per_player * (home key players out - away key players out)"""
+    bias = model.SIM["marginBias"]
+    xs = [ho - ao for _, _, _, ho, ao in rows]
+    ys = [g["hs"] - g["as"] - (hp - ap) - bias for g, hp, ap, _, _ in rows]
+    return -sum(x * y for x, y in zip(xs, ys)) / sum(x * x for x in xs)
+
+
+def absence_metrics(rows, per_player):
+    sim = model.SIM
+    dist = statistics.NormalDist()
+    ll = mae = right = 0.0
+    for g, hp, ap, ho, ao in rows:
+        dh, da = model.absence_effect(ho, ao, per_player)
+        m = hp + dh - ap - da
+        mae += abs(g["hs"] - g["as"] - m)
+        right += (m + sim["marginBias"] > 0) == (g["hs"] > g["as"])
+        p = min(max(dist.cdf((m + sim["marginBias"]) / sim["sdMargin"]), 1e-6), 1 - 1e-6)
+        ll -= math.log(p if g["hs"] > g["as"] else 1 - p)
+    n = len(rows)
+    return {"log_loss": ll / n, "margin_error": mae / n, "accuracy": right / n}
+
+
+def absences():
+    """Each season is predicted with the effect measured on the other two (leave one season out)."""
+    for k in (1, 2, 3, 4):
+        rows = {s: absence_rows(s, k) for s in TEST_SEASONS}
+        line, effects = [], []
+        for test in TEST_SEASONS:
+            per = fit_absence([r for s in TEST_SEASONS if s != test for r in rows[s]])
+            before, after = absence_metrics(rows[test], 0), absence_metrics(rows[test], per)
+            effects.append(per)
+            line.append(f"{test} log loss {before['log_loss']:.4f}->{after['log_loss']:.4f}")
+        all_rows = [r for s in TEST_SEASONS for r in rows[s]]
+        per = fit_absence(all_rows)
+        before, after = absence_metrics(all_rows, 0), absence_metrics(all_rows, per)
+        print(f"top {k}: {per:.2f} points per key player out (per season {', '.join(f'{e:.2f}' for e in effects)})")
+        print(f"  {' | '.join(line)}")
+        print(f"  all: winner right {before['accuracy']:.1%} -> {after['accuracy']:.1%}, "
+              f"margin error {before['margin_error']:.2f} -> {after['margin_error']:.2f}")
+    print(f"currently in model.ABSENCE: {model.ABSENCE}")
+
+
 if __name__ == "__main__":
     if "--tune" in sys.argv:
         tune()
     elif "--spread" in sys.argv:
         spread()
+    elif "--absences" in sys.argv:
+        absences()
     else:
         report(TEST_SEASONS)

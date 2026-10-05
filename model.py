@@ -22,7 +22,10 @@ Parameters below were chosen with backtest.py on past seasons.
 
 import json
 import math
+import time
+import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +42,11 @@ DEFAULT_AVERAGE = 80.0        # league points per team per game when nothing is 
 # The betting page simulates games with these: final margin and total ~ normal(prediction + bias, sd).
 SIM = {"sdMargin": 11.5, "marginBias": 0.6, "sdTotal": 17.0, "totalBias": 1.2, "corr": 0.0}
 
+# Missing players (python backtest.py --absences). A team's key players are its 3 regulars (played at
+# least half its games) with the highest PIR per game; early in the season that leans on last season's
+# PIR (worth priorGames games). Each key player who doesn't play costs his team perPlayer points of margin.
+ABSENCE = {"keyPlayers": 3, "perPlayer": 1.5, "minGames": 3, "minShare": 0.5, "priorGames": 5}
+
 
 def parse_date(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
@@ -51,6 +59,7 @@ def simplify_games(raw_games):
         if not g.get("played"):
             continue
         out.append({
+            "code": g["gameCode"],
             "date": parse_date(g["utcDate"]),
             "home": g["local"]["club"]["code"],
             "away": g["road"]["club"]["code"],
@@ -98,6 +107,7 @@ class Ratings:
     def to_json(self, teams):
         return {
             "avg": round(self.avg, 2), "hca": self.hca, "scale": self.scale, "sim": SIM,
+            "absence": {"keyPlayers": ABSENCE["keyPlayers"], "perPlayer": ABSENCE["perPlayer"]},
             "teams": {t: [round(self.off.get(t, NEW_TEAM_PRIOR[0]), 2), round(self.dfn.get(t, NEW_TEAM_PRIOR[1]), 2)]
                       for t in teams},
         }
@@ -161,6 +171,63 @@ def fit(games, teams, prior=None, as_of=None, *, prior_strength=PRIOR_STRENGTH,
     return Ratings(avg, {t: x[idx[t]] for t in teams}, {t: x[n + idx[t]] for t in teams}, hca, scale)
 
 
+class Availability:
+    """
+    Follows a season game by game and knows, before each game, every team's regulars and their value.
+        av = Availability(history_player_totals(last season))
+        av.key_players_out(team, players_who_play)   # before the game
+        av.add(team, box_lines)                      # after it: [[player code, seconds, PIR], ...]
+    """
+
+    def __init__(self, last_season=None, min_games=None, min_share=None, prior_games=None):
+        """last_season: player code -> (games, minutes, PIR) last season, from history_player_totals"""
+        self.min_games = ABSENCE["minGames"] if min_games is None else min_games
+        self.min_share = ABSENCE["minShare"] if min_share is None else min_share
+        self.prior_games = ABSENCE["priorGames"] if prior_games is None else prior_games
+        self.prior = {c: pir / n for c, (n, _, pir) in (last_season or {}).items() if n >= 5}
+        self.team_games = {}
+        self.stats = {}        # (team, player) -> [games, PIR]
+        self.last_played = {}  # team -> players who played its latest game
+
+    def value(self, team, player):
+        """PIR per game, leaning on last season's early on"""
+        n, pir = self.stats[(team, player)]
+        if player in self.prior:
+            k = self.prior_games
+            return (pir + k * self.prior[player]) / (n + k)
+        return pir / n
+
+    def regulars(self, team):
+        """-> {player: value} for players who played at least minShare of the team's games"""
+        tg = self.team_games.get(team, 0)
+        if tg < self.min_games:
+            return {}
+        return {c: self.value(t, c) for (t, c), (n, _) in self.stats.items()
+                if t == team and n >= self.min_games and n / tg >= self.min_share}
+
+    def key_players(self, team, k=None):
+        regs = self.regulars(team)
+        return sorted(regs, key=lambda c: -regs[c])[:k or ABSENCE["keyPlayers"]]
+
+    def key_players_out(self, team, playing, k=None):
+        return sum(c not in playing for c in self.key_players(team, k))
+
+    def add(self, team, lines):
+        self.team_games[team] = self.team_games.get(team, 0) + 1
+        for c, secs, pir in lines:
+            if secs > 0:
+                st = self.stats.setdefault((team, c), [0, 0.0])
+                st[0] += 1
+                st[1] += pir
+        self.last_played[team] = {c for c, secs, _ in lines if secs > 0}
+
+
+def absence_effect(home_out, away_out, per_player=None):
+    """key players out -> (home points change, away points change); the total stays the same"""
+    d = (ABSENCE["perPlayer"] if per_player is None else per_player) * (away_out - home_out) / 2
+    return d, -d
+
+
 def season_teams(games):
     return {g["home"] for g in games} | {g["away"] for g in games}
 
@@ -172,13 +239,26 @@ API_PLAYERS = ("https://api-live.euroleague.net/v3/competitions/E/statistics/pla
                "?seasonMode=Single&seasonCode={season}&statisticMode=Accumulated&limit=1000")
 
 
+def fetch_json(url, attempts=20):
+    """GET with waiting on the API's rate limit."""
+    req = urllib.request.Request(url, headers={"User-Agent": "euroleague-hub"})
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or i == attempts - 1:
+                raise
+            wait = int(e.headers.get("Retry-After") or 30)
+            print(f"  API rate limit reached, waiting {wait}s...", flush=True)
+            time.sleep(wait + 1)
+
+
 def _cached(name, url):
     f = HISTORY / name
     if not f.exists():
         HISTORY.mkdir(parents=True, exist_ok=True)
-        req = urllib.request.Request(url, headers={"User-Agent": "euroleague-hub"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            f.write_bytes(r.read())
+        f.write_text(json.dumps(fetch_json(url)), encoding="utf-8")
     return json.loads(f.read_text(encoding="utf-8"))
 
 
@@ -190,6 +270,44 @@ def history_players(season):
     """-> list of (player code, team code, games, total PIR) for a finished season"""
     data = _cached(f"players_{season}.json", API_PLAYERS.format(season=season))["players"]
     return [(p["player"]["code"], p["player"]["team"]["code"], p["gamesPlayed"], p["pir"]) for p in data]
+
+
+def history_player_totals(season):
+    """player code -> (games, minutes, PIR) over a finished season (all clubs)"""
+    data = _cached(f"players_{season}.json", API_PLAYERS.format(season=season))["players"]
+    out = {}
+    for p in data:
+        n, mins, pir = out.get(p["player"]["code"], (0, 0.0, 0.0))
+        out[p["player"]["code"]] = (n + p["gamesPlayed"], mins + p["minutesPlayed"], pir + p["pir"])
+    return out
+
+
+def compact_box(box):
+    """API box score -> {"home": [[player code, seconds, PIR], ...], "away": [...]} (players listed for the game)"""
+    return {side: [[p["player"]["person"]["code"], p["stats"].get("timePlayed") or 0, p["stats"]["valuation"]]
+                   for p in box[api_side]["players"]]
+            for side, api_side in (("home", "local"), ("away", "road"))}
+
+
+def history_boxes(season):
+    """game code -> compact box score, for every played game of a finished season.
+    Each game is saved as soon as it is downloaded, so an interrupted download resumes."""
+    folder = HISTORY / f"boxes_{season}"
+    folder.mkdir(parents=True, exist_ok=True)
+    url = f"https://api-live.euroleague.net/v2/competitions/E/seasons/{season}/games/{{}}/stats"
+
+    def one(code):
+        f = folder / f"{code}.json"
+        if not f.exists():
+            f.write_text(json.dumps(compact_box(fetch_json(url.format(code)))), encoding="utf-8")
+        return code, json.loads(f.read_text(encoding="utf-8"))
+
+    codes = [g["code"] for g in history_games(season)]
+    missing = sum(not (folder / f"{c}.json").exists() for c in codes)
+    if missing:
+        print(f"  downloading {missing} box scores of {season}...", flush=True)
+    with ThreadPoolExecutor(2) as pool:
+        return dict(pool.map(one, codes))
 
 
 def history_roster(season):

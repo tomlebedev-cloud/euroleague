@@ -197,7 +197,22 @@ def main():
         record[0] += (p >= 0.5) == (raw["local"]["score"] > raw["road"]["score"])
         record[1] += 1
     ratings = model.fit(model_games, teams, prior)
-    print(f"  model picked {record[0]}/{record[1]} winners so far this season")
+
+    # who plays: each team's regulars, their value, and who missed the latest game
+    av = model.Availability(model.history_player_totals(model.previous(SEASON_CODE)))
+    for raw in sorted(played, key=lambda g: g["utcDate"]):
+        box = model.compact_box(boxes[raw["gameCode"]])
+        av.add(raw["local"]["club"]["code"], box["home"])
+        av.add(raw["road"]["club"]["code"], box["away"])
+    availability = {}
+    for code in teams:
+        regs = av.regulars(code)
+        last = av.last_played.get(code, set())
+        availability[code] = [
+            # [player, PIR per game, missed the latest game, no longer on the roster]
+            [c, round(v, 1), c not in last, c not in roster[code]]
+            for c, v in sorted(regs.items(), key=lambda x: -x[1])
+        ]
 
     season_name = raw_games[0]["season"]["alias"] if raw_games else SEASON_CODE
     updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -208,6 +223,7 @@ def main():
         f"const TEAMS = {json.dumps(sorted(teams.values(), key=lambda t: t['name']), ensure_ascii=False)};\n"
         f"const GAMES = {json.dumps(games, ensure_ascii=False, separators=(',', ':'))};\n"
         f"const MODEL = {json.dumps(ratings.to_json(teams))};\n"
+        f"const AVAILABILITY = {json.dumps(availability, separators=(',', ':'))};\n"
     )
     OUT.write_text(js, encoding="utf-8")
     print(f"Wrote {OUT} ({len(js) // 1024} KB)")

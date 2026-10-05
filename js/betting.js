@@ -23,6 +23,33 @@ const betSettings = Object.assign(
   load("bets.settings", {}));
 const odds = load("bets.odds", {});   // game code -> { ml: [h, a], hcp: [line, h, a], tot: [line, o, u] }
 let myBets = load("bets.log", []);    // [{ id, code, market, side, line, odds, stake, placed }]
+const lineups = load("bets.out", {});  // game code -> { player code: true (out) / false (plays) }
+
+// ---------- line-ups ----------
+// AVAILABILITY (from update_data.py): team -> regulars [[code, PIR per game, missed latest game, left club]],
+// best first. The top ABS.keyPlayers are key players: each one who doesn't play costs ABS.perPlayer points
+// of margin (measured on 2023-24 to 2025-26, see backtest.py --absences).
+const ABS = Object.assign({ keyPlayers: 3, perPlayer: 1.5 }, MODEL.absence || {});
+const playerName = {};
+TEAMS.forEach(t => t.players.forEach(p => { playerName[p.code] = p.name; }));
+const regulars = id => (typeof AVAILABILITY !== "undefined" && AVAILABILITY[id]) || [];
+
+function isOut(g, p) {
+  if (p[3]) return true; // left the club
+  return lineups[g.code]?.[p[0]] ?? p[2]; // your choice, else: out if he missed the latest game
+}
+const keyOut = (g, team) => regulars(team).slice(0, ABS.keyPlayers).filter(p => isOut(g, p));
+
+// model prediction adjusted for who plays
+function gamePrediction(g) {
+  const p = predict(g.home, g.away, g.neutral);
+  const outHome = keyOut(g, g.home), outAway = keyOut(g, g.away);
+  const shift = ABS.perPlayer * (outAway.length - outHome.length); // home margin change; total unchanged
+  const margin = p.margin + shift, total = p.total;
+  let hp = Math.round((total + margin) / 2), ap = Math.round((total - margin) / 2);
+  if (hp === ap) margin >= 0 ? hp++ : ap++;
+  return { homePts: hp, awayPts: ap, margin, total, shift, outHome, outAway };
+}
 
 // ---------- simulation ----------
 function rng(seed) {  // mulberry32: same game -> same numbers on every page load
@@ -41,9 +68,11 @@ function normal(rand) {
 const simCache = {};
 // -> { margins: Int16Array, totals: Int16Array } of final scores (overtime included)
 function simulate(g) {
-  if (simCache[g.code]) return simCache[g.code];
-  const p = predict(g.home, g.away, g.neutral);
+  const p = gamePrediction(g);
+  const key = `${g.code}|${p.margin.toFixed(3)}|${p.total.toFixed(3)}`;
+  if (simCache[key]) return simCache[key];
   const mu = p.margin + SIM.marginBias, tot = p.total + SIM.totalBias;
+  // same random numbers for a game, so line-up changes compare cleanly
   const rand = rng(Number(g.code) * 7919 + 17);
   const margins = new Int16Array(SIMS), totals = new Int16Array(SIMS);
   const c = SIM.corr, c2 = Math.sqrt(1 - c * c);
@@ -62,7 +91,7 @@ function simulate(g) {
     margins[i] = hs - as;
     totals[i] = hs + as;
   }
-  return simCache[g.code] = { margins, totals, pred: p };
+  return simCache[key] = { margins, totals, pred: p };
 }
 
 // probability that a bet wins / is refunded (whole-number lines can push)
@@ -184,19 +213,44 @@ function oddsInput(code, key, i, placeholder, step = "0.01") {
 
 function fairOdds(p) { return p > 0 ? (1 / p).toFixed(2) : "–"; }
 
-function gameCard(g) {
+function lineupList(g, team) {
+  const regs = regulars(team);
+  if (!regs.length) return `<p class="muted">Not enough games yet.</p>`;
+  return regs.map((p, i) => `<label class="lineup ${p[3] ? "muted" : ""} ${i < ABS.keyPlayers ? "key" : ""}">
+      <input type="checkbox" data-player="${p[0]}" ${isOut(g, p) ? "checked" : ""} ${p[3] ? "disabled" : ""}>
+      <span>${i < ABS.keyPlayers ? "★ " : ""}${esc(playerName[p[0]] || p[0])}</span>
+      <small>${p[3] ? "left club · " : p[2] ? "missed last game · " : ""}${p[1].toFixed(1)} PIR</small>
+    </label>`).join("");
+}
+
+function modelBox(g) {
   const sim = simulate(g), p = sim.pred, h = teamById[g.home], a = teamById[g.away];
   const pHome = chances(sim, "ml", "home", 0).win;
   const fairHcp = -median(sim.margins), fairTot = median(sim.totals);
   // model probabilities at lines around the fair ones, for quick comparison with the bookmaker
   const hcpLines = [-6, -3, 0, 3, 6].map(d => Math.round(fairHcp) + d + 0.5);
   const totLines = [-8, -4, 0, 4, 8].map(d => Math.round(fairTot) + d + 0.5);
-  return `<div class="card bet-game" data-code="${g.code}">
-    ${gameRow(g, true)}
+  const names = list => list.map(x => esc(playerName[x[0]] || x[0]) + (x[3] ? " (left club)" : "")).join(", ");
+  const outs = [[h, p.outHome], [a, p.outAway]].filter(([, l]) => l.length)
+    .map(([t, l]) => `${esc(t.short)} without ${names(l)}`).join("; ");
+  const shift = Math.abs(p.shift) >= 0.05
+    ? ` · line-ups move the margin <b>${signed(+p.shift.toFixed(1))}</b> for ${esc(h.short)}` : "";
+  return `
     <p class="model-line">Model: <b>${p.homePts}–${p.awayPts}</b> · ${esc(h.short)} wins ${pct(pHome)}
       (fair odds ${fairOdds(pHome)} / ${fairOdds(1 - pHome)}) · fair handicap <b>${esc(h.short)} ${signed(fairHcp)}</b>
-      · fair total <b>${fairTot}</b></p>
-    <details class="lines"><summary>Model chances at other lines</summary>
+      · fair total <b>${fairTot}</b>${shift}</p>
+    ${outs ? `<p class="note out-line">Key players out: ${outs}</p>` : ""}
+    <details class="lines" data-details="lineup"><summary>Line-ups: tick players who won't play</summary>
+      <div class="grid-2">
+        <div><div class="round-title">${esc(h.name)}</div>${lineupList(g, g.home)}</div>
+        <div><div class="round-title">${esc(a.name)}</div>${lineupList(g, g.away)}</div>
+      </div>
+      <p class="note">Regulars by PIR per game. ★ = key player: each one who misses the game costs his team
+        about ${ABS.perPlayer} points (measured on the last three seasons); other players don't move the prediction.
+        Players who missed the team's latest game are ticked automatically: check the injury news and correct it.
+        <button class="link" data-reset="${g.code}">Reset</button></p>
+    </details>
+    <details class="lines" data-details="chances"><summary>Model chances at other lines</summary>
       <div class="grid-2">
         <table><thead><tr><th class="left">${esc(h.short)} handicap</th><th>${esc(h.short)} covers</th><th>Fair odds</th></tr></thead><tbody>
           ${hcpLines.map(l => { const c = chances(sim, "hcp", "home", l).win;
@@ -207,7 +261,14 @@ function gameCard(g) {
             return `<tr><td class="left">${l}</td><td>${pct(c)}</td><td>${fairOdds(c)} / ${fairOdds(1 - c)}</td></tr>`; }).join("")}
         </tbody></table>
       </div>
-    </details>
+    </details>`;
+}
+
+function gameCard(g) {
+  const h = teamById[g.home], a = teamById[g.away];
+  return `<div class="card bet-game" data-code="${g.code}">
+    ${gameRow(g, true)}
+    <div class="model-box">${modelBox(g)}</div>
     <div class="odds-grid">
       <span class="lbl">Winner</span>
       <label>${esc(h.short)} ${oddsInput(g.code, "ml", 0, "odds")}</label>
@@ -259,7 +320,7 @@ pages.bets = () => {
       </div>
       <p class="note">
         <b>Bookmaker</b> = the bookmaker's chance with its margin removed. <b>Model</b> = simulation.
-        <b>Used</b> = blend of both by "model weight": the bookmaker knows about injuries and news, the model doesn't.
+        <b>Used</b> = blend of both by "model weight": the bookmaker follows the news more closely than the model.
         <b>Value</b> = expected return per 1 € staked. <b>Stake</b> = ${s.kelly} Kelly, at most ${s.maxPct}% of bankroll.
       </p>
     </div>
@@ -270,7 +331,9 @@ pages.bets = () => {
       <h2>Read this before betting</h2>
       <p>The model picks about 67% of winners, but bookmakers' prices are usually at least as good, and their
         margin (typically 5–8%) has to be beaten first. "Value" here means the model disagrees with the bookmaker;
-        it is not a guarantee. The model doesn't know about injuries, rest or line-ups — check the news before betting.
+        it is not a guarantee. The model only knows who missed each team's latest game: tick injured key players
+        yourself from the news before betting. On past seasons, knowing the line-ups improved the model only a
+        little (winners 66.6% → 66.8%): bookmakers react to injury news fast, so the edge is in being quicker.
         Over a few rounds results are mostly luck; keep the log below to see whether it works over 100+ bets.</p>
       <p>Totals (over/under) are the weakest part: on past seasons the model missed the total by 13.3 points on
         average, barely better than just using the league average (13.9). Winner and handicap bets rest on firmer ground.</p>
@@ -314,6 +377,26 @@ setup.bets = () => {
     renderBest();
   }));
 
+  // line-up changes: redraw that game's model part, keeping open sections open
+  const redrawModel = card => {
+    const box = card.querySelector(".model-box");
+    const open = [...box.querySelectorAll("details[open]")].map(d => d.dataset.details);
+    box.innerHTML = modelBox(gameByCode[card.dataset.code]);
+    open.forEach(k => box.querySelector(`details[data-details="${k}"]`)?.setAttribute("open", ""));
+    renderGame(card);
+    renderBest();
+  };
+  const page = document.getElementById("betsPage");
+  page && page.addEventListener("change", e => {
+    const cb = e.target.closest("input[data-player]");
+    if (!cb) return;
+    const card = cb.closest(".bet-game"), code = card.dataset.code;
+    lineups[code] = lineups[code] || {};
+    lineups[code][cb.dataset.player] = cb.checked;
+    save("bets.out", lineups);
+    redrawModel(card);
+  });
+
   const fields = { sBankroll: "bankroll", sWeight: "modelWeight", sEdge: "minEdge", sKelly: "kelly", sMax: "maxPct" };
   Object.entries(fields).forEach(([id, key]) => {
     const inp = document.getElementById(id);
@@ -325,10 +408,16 @@ setup.bets = () => {
     });
   });
 
-  // add / remove bets in the log (buttons are re-rendered, so listen on the page)
-  const page = document.getElementById("betsPage");
+  // add / remove bets in the log, reset line-ups (buttons are re-rendered, so listen on the page)
   page && page.addEventListener("click", e => {
     const add = e.target.closest("[data-add]"), del = e.target.closest("[data-del]");
+    const reset = e.target.closest("[data-reset]");
+    if (reset) {
+      delete lineups[reset.dataset.reset];
+      save("bets.out", lineups);
+      redrawModel(reset.closest(".bet-game"));
+      return;
+    }
     if (add) {
       myBets.push({ id: Date.now(), placed: new Date().toISOString(), ...JSON.parse(add.dataset.add) });
       add.textContent = "✓ added";

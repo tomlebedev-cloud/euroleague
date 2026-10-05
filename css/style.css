@@ -154,3 +154,7 @@ button.link { border: none; background: none; padding: 0; color: var(--accent); 
   .odds-grid .lbl { grid-column: 1 / -1; margin-top: 4px; }
   .odds-grid > span:empty { display: none; }
 }
+label.lineup { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: .88rem; }
+label.lineup small { color: var(--muted); margin-left: auto; }
+.out-line { margin: -4px 0 8px; }
+label.lineup.key span { font-weight: 600; }

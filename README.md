@@ -98,6 +98,14 @@ about injuries and news), and shows the expected value and a stake (¼ Kelly, at
 Odds, settings and the bet log are saved in your browser only; bet results settle automatically after the
 data update.
 
+**Line-ups.** Each team's three most productive regulars (PIR per game, early in the season leaning on
+last season) are its key players. Every key player who doesn't play costs his team 1.5 points of margin.
+Players who missed the team's latest game are marked out automatically; tick or untick players from the
+injury news. Measured with `python backtest.py --absences` on 2023-24 to 2025-26 box scores (downloaded once
+into `.cache/history/`), each season predicted with the effect measured on the other two: the effect was 1.3–1.8
+points in every season, but the overall gain is small (winners right 66.6% → 66.8%), and that is with the
+real line-ups known. Summing every missing player's PIR worked worse than counting key players.
+
 The model has a real edge over a coin flip on winners and margins, but totals are weak (mean error 13.3
 points vs 13.9 for the plain league average), and no test against real bookmaker odds has been done. Treat
 "value" as a signal to look closer, not a sure thing.
