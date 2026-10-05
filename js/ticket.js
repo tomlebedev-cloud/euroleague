@@ -7,6 +7,17 @@
 
 const MAX_LEGS = 3; // a combo longer than this multiplies the bookmaker's margin too much
 
+setup.ticket = () => {
+  recordPublished();
+  const inp = document.getElementById("tBankroll");
+  inp && inp.addEventListener("change", () => {
+    if (inp.value === "" || !isFinite(inp.value)) return;
+    betSettings.bankroll = Number(inp.value);
+    save("bets.settings", betSettings);
+    route();
+  });
+};
+
 // ---------- reasons ----------
 function netRatings() {
   const t = MODEL.teams;
@@ -44,6 +55,10 @@ function reasons(g, side) {
   const nm = l => l.map(x => esc(playerName[x[0]] || x[0])).join(", ");
   if (outOther.length) out.push(`${esc(O.short)} without key player${outOther.length > 1 ? "s" : ""} ${nm(outOther)}.`);
   if (outPick.length) out.push(`<span class="minus">Risk: ${esc(P.short)} without ${nm(outPick)} (already in the numbers).</span>`);
+  const isNew = id => typeof NEW_TEAMS !== "undefined" && NEW_TEAMS.includes(id);
+  if (isNew(pick)) out.push(`<span class="minus">${esc(P.name)} is new to the EuroLeague: its rating started from a rough guess
+    (no last season to go by) and rests on only ${rP.gp} games, so this pick is less certain than the numbers say.</span>`);
+  if (isNew(other)) out.push(`<span class="minus">${esc(O.name)} is new to the EuroLeague: its rating is still a rough guess.</span>`);
   if (played.length < 60) out.push(`<span class="muted">Early season: ratings still lean on last season and summer transfers,
     so surprises are more likely than later.</span>`);
   return out;
@@ -155,9 +170,14 @@ pages.ticket = () => {
 
   return `<h1>Ticket — Round ${nr}</h1>
     <div class="card">
-      <p style="margin-top:0">What the model would put on a ticket for the next round and why. Settings (bankroll,
-        minimum value ${betSettings.minEdge}%, model weight ${betSettings.modelWeight}%) come from the
-        <a href="#bets">Betting</a> page, and so do the odds and line-ups you enter there.</p>
+      <p style="margin-top:0">What the model would put on a ticket for the next round and why.
+        ${published.source ? `Odds: ${esc(published.source)}, ${esc(published.taken)}, unless you typed your own on the
+        <a href="#bets">Betting</a> page.` : ""}</p>
+      <div class="controls settings" style="margin-bottom:0">
+        <label>Your bankroll <input type="number" id="tBankroll" min="0" step="5" value="${betSettings.bankroll}"> €</label>
+        <span class="note">Stakes: ${betSettings.kelly} Kelly, at most ${betSettings.maxPct}% of the bankroll per bet
+          (${(betSettings.bankroll * betSettings.maxPct / 100).toFixed(2)} €). The rest stays for the next rounds.</span>
+      </div>
     </div>
     ${ticket}
     <div class="card">

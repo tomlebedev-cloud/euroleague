@@ -99,6 +99,10 @@ about injuries and news), and shows the expected value and a stake (¼ Kelly, at
 Odds, settings and the bet log are saved in your browser only; bet results settle automatically after the
 data update.
 
+**Published odds.** `js/odds.js` holds bookmaker odds for the next round, typed in by hand from the
+bookmaker's site; they fill in every game you haven't entered your own odds for, and count in the odds history.
+Update it before each round.
+
 **Odds template.** "Copy template" gives a plain-text form with every game of the round
 (`Win: home away`, `Hcp: line home away`, `Tot: line over under`); fill in the bookmaker's odds and paste it
 back with "Apply" (or paste it into a chat).
@@ -132,6 +136,7 @@ css/style.css    styles (light + dark mode)
 js/app.js        pages, standings and stats
 js/betting.js    betting page: simulation, odds comparison, bet log
 js/ticket.js     ticket page: suggested bets and the reasons for them
+js/odds.js       bookmaker odds for the next round (edit by hand)
 js/data.js       generated data — don't edit by hand
 update_data.py   downloads data from the EuroLeague API
 model.py         prediction model

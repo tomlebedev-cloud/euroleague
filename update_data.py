@@ -205,6 +205,9 @@ def main():
         box = model.compact_box(boxes[raw["gameCode"]])
         av.add(raw["local"]["club"]["code"], box["home"])
         av.add(raw["road"]["club"]["code"], box["away"])
+    # teams that weren't in last season's EuroLeague: their starting rating is only a rough guess
+    new_teams = sorted(set(teams) - model.season_teams(model.history_games(model.previous(SEASON_CODE))))
+
     availability = {}
     for code in teams:
         regs = av.regulars(code)
@@ -224,6 +227,7 @@ def main():
         f"const TEAMS = {json.dumps(sorted(teams.values(), key=lambda t: t['name']), ensure_ascii=False)};\n"
         f"const GAMES = {json.dumps(games, ensure_ascii=False, separators=(',', ':'))};\n"
         f"const MODEL = {json.dumps(ratings.to_json(teams))};\n"
+        f"const NEW_TEAMS = {json.dumps(new_teams)};\n"
         f"const AVAILABILITY = {json.dumps(availability, separators=(',', ':'))};\n"
     )
     OUT.write_text(js, encoding="utf-8")

@@ -23,6 +23,11 @@ const betSettings = Object.assign(
   { bankroll: 100, kelly: 0.25, maxPct: 2, minEdge: 5, modelWeight: 50 },
   load("bets.settings", {}));
 const odds = load("bets.odds", {});   // game code -> { ml: [h, a], hcp: [line, h, a], tot: [line, o, u] }
+// odds published with the site (js/odds.js) fill in games you haven't typed odds for
+const published = typeof BOOK_ODDS !== "undefined" ? BOOK_ODDS : { games: {} };
+for (const [code, o] of Object.entries(published.games)) {
+  if (!odds[code]) odds[code] = JSON.parse(JSON.stringify(o));
+}
 let myBets = load("bets.log", []);    // [{ id, code, market, side, line, odds, stake, placed }]
 const lineups = load("bets.out", {});  // game code -> { player code: true (out) / false (plays) }
 // every set of odds you typed, with the model's chances at that moment (the model changes after each round):
@@ -254,6 +259,14 @@ function recordOdds(g) {
     if (recent) list[list.length - 1] = entry; else list.push(entry);
   }
   save("bets.oddsLog", oddsLog);
+}
+
+// published odds count in the history too (once per game, before tip-off)
+function recordPublished() {
+  for (const code of Object.keys(published.games)) {
+    const g = gameByCode[code];
+    if (g && !g.score && !started(g) && !oddsLog[code]) recordOdds(g);
+  }
 }
 
 // the last odds saved before tip-off, for each finished game
@@ -496,6 +509,8 @@ pages.bets = () => {
   const s = betSettings;
   return `<div id="betsPage"><h1>Betting — Round ${nr}</h1>
     <div class="card">
+      ${published.source ? `<p class="note" style="margin-top:0">Odds already filled in: ${esc(published.source)}, ${esc(published.taken)}
+        (winner only). Change them if the price has moved.</p>` : ""}
       <p style="margin-top:0">Each game is simulated ${SIMS.toLocaleString("en")} times from the model's prediction, with
         the spread of real results around its predictions measured on 1,063 past games
         (final score, overtime included). Type in the bookmaker's
@@ -549,6 +564,7 @@ pages.bets = () => {
 };
 
 setup.bets = () => {
+  recordPublished();
   const nr = nextRound();
   const games = nr ? upcoming.filter(g => g.round === nr) : [];
 
