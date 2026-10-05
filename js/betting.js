@@ -22,12 +22,10 @@ function save(key, value) {
 const betSettings = Object.assign(
   { bankroll: 100, kelly: 0.25, maxPct: 2, minEdge: 5, modelWeight: 50 },
   load("bets.settings", {}));
-const odds = load("bets.odds", {});   // game code -> { ml: [h, a], hcp: [line, h, a], tot: [line, o, u] }
-// odds published with the site (js/odds.js) fill in games you haven't typed odds for
+const odds = load("bets.odds", {});   // odds you typed: game code -> { ml: [h, a], hcp: [line, h, a], tot: [line, o, u] }
+// odds published with the site (js/odds.js) are used for games you haven't typed odds for
 const published = typeof BOOK_ODDS !== "undefined" ? BOOK_ODDS : { games: {} };
-for (const [code, o] of Object.entries(published.games)) {
-  if (!odds[code]) odds[code] = JSON.parse(JSON.stringify(o));
-}
+const gameOdds = code => odds[code] || published.games[code] || {};
 let myBets = load("bets.log", []);    // [{ id, code, market, side, line, odds, stake, placed }]
 const lineups = load("bets.out", {});  // game code -> { player code: true (out) / false (plays) }
 // every set of odds you typed, with the model's chances at that moment (the model changes after each round):
@@ -126,7 +124,7 @@ function median(arr) {
 // ---------- evaluating odds ----------
 // every selection that has odds typed in for game g
 function selections(g) {
-  const o = odds[g.code] || {}, h = teamById[g.home], a = teamById[g.away];
+  const o = gameOdds(g.code), h = teamById[g.home], a = teamById[g.away];
   const out = [];
   const pair = (market, line, sides) => {
     const [s1, s2] = sides;
@@ -204,7 +202,7 @@ function oddsTemplate(games) {
   const v = x => x ?? "";
   return `EuroLeague round ${games[0]?.round ?? ""} odds. Decimal odds; handicap line for the HOME team (e.g. -4.5).\n\n`
     + games.map(g => {
-      const o = odds[g.code] || {}, h = teamById[g.home], a = teamById[g.away];
+      const o = gameOdds(g.code), h = teamById[g.home], a = teamById[g.away];
       return `#${g.code} ${h.name} – ${a.name} (${fmtDate(g.date)} ${fmtTime(g.date)})
 Win: ${v(o.ml?.[0])} ${v(o.ml?.[1])}
 Hcp: ${v(o.hcp?.[0])} ${v(o.hcp?.[1])} ${v(o.hcp?.[2])}
@@ -226,7 +224,7 @@ function applyTemplate(text) {
     const key = { win: "ml", hcp: "hcp", tot: "tot" }[m[1].toLowerCase()];
     const size = key === "ml" ? 2 : 3;
     if (nums.length < size) continue;
-    odds[code] = odds[code] || {};
+    odds[code] = odds[code] || JSON.parse(JSON.stringify(published.games[code] || {}));
     odds[code][key] = nums.slice(0, size);
     changed.add(code);
   }
@@ -406,7 +404,7 @@ function myBetsCard() {
 
 // ---------- page ----------
 function oddsInput(code, key, i, placeholder, step = "0.01") {
-  const v = odds[code]?.[key]?.[i];
+  const v = gameOdds(code)[key]?.[i];
   return `<input type="number" inputmode="decimal" step="${step}" data-code="${code}" data-key="${key}" data-i="${i}"
     placeholder="${placeholder}" value="${v ?? ""}" ${started(gameByCode[code]) ? "disabled" : ""}>`;
 }
@@ -501,13 +499,26 @@ function selTable(sels) {
   </table></div>`;
 }
 
-pages.bets = () => {
+// the next round, or the one after it (#bets/5, #ticket/5)
+function chosenRound(params) {
+  const nr = nextRound(), want = Number(params && params[0]);
+  return want && upcoming.some(g => g.round === want) ? want : nr;
+}
+function roundTabs(page, current) {
   const nr = nextRound();
+  if (!nr) return "";
+  const rounds = [nr, nr + 1].filter(r => upcoming.some(g => g.round === r));
+  return `<div class="controls">${rounds.map(r => `<a class="tab ${r === current ? "active" : ""}" href="#${page}/${r}">Round ${r}</a>`).join("")}
+    ${current !== nr ? `<span class="note">Round ${current} uses today's ratings; they change after round ${nr} is played.</span>` : ""}</div>`;
+}
+
+pages.bets = params => {
+  const nr = chosenRound(params);
   if (!nr) return `<div id="betsPage"><h1>Betting</h1><div class="card"><p class="muted">No upcoming games.</p></div>
     <div id="myBets">${myBetsCard()}</div><div id="history">${historyCard()}</div></div>`;
   const games = upcoming.filter(g => g.round === nr);
   const s = betSettings;
-  return `<div id="betsPage"><h1>Betting — Round ${nr}</h1>
+  return `<div id="betsPage"><h1>Betting — Round ${nr}</h1>${roundTabs("bets", nr)}
     <div class="card">
       ${published.source ? `<p class="note" style="margin-top:0">Odds already filled in: ${esc(published.source)}, ${esc(published.taken)}
         (winner only). Change them if the price has moved.</p>` : ""}
@@ -563,9 +574,9 @@ pages.bets = () => {
     </div></div>`;
 };
 
-setup.bets = () => {
+setup.bets = params => {
   recordPublished();
-  const nr = nextRound();
+  const nr = chosenRound(params);
   const games = nr ? upcoming.filter(g => g.round === nr) : [];
 
   const renderGame = card => {
@@ -592,7 +603,7 @@ setup.bets = () => {
   document.querySelectorAll(".odds-grid input").forEach(inp => inp.addEventListener("input", () => {
     const { code, key, i } = inp.dataset;
     const size = key === "ml" ? 2 : 3;
-    odds[code] = odds[code] || {};
+    odds[code] = odds[code] || JSON.parse(JSON.stringify(published.games[code] || {})); // start from the published ones
     odds[code][key] = odds[code][key] || Array(size).fill(null);
     odds[code][key][i] = inp.value === "" ? null : Number(inp.value);
     save("bets.odds", odds);

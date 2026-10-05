@@ -115,8 +115,8 @@ function comboSummary(legs, pAll, oddsAll) {
       : ` · worth it only at combined odds of at least <b>${((1 + betSettings.minEdge / 100) / pAll).toFixed(2)}</b>`}</p>`;
 }
 
-pages.ticket = () => {
-  const nr = nextRound();
+pages.ticket = params => {
+  const nr = chosenRound(params);
   if (!nr) return `<h1>Ticket</h1><div class="card"><p class="muted">No upcoming games.</p></div>`;
   const games = upcoming.filter(g => g.round === nr && !started(g));
   if (!games.length) return `<h1>Ticket — Round ${nr}</h1><div class="card"><p class="muted">All games of this round have started.</p></div>`;
@@ -168,9 +168,9 @@ pages.ticket = () => {
       </div>`;
   }
 
-  return `<h1>Ticket — Round ${nr}</h1>
+  return `<h1>Ticket — Round ${nr}</h1>${roundTabs("ticket", nr)}
     <div class="card">
-      <p style="margin-top:0">What the model would put on a ticket for the next round and why.
+      <p style="margin-top:0">What the model would put on a ticket for this round and why.
         ${published.source ? `Odds: ${esc(published.source)}, ${esc(published.taken)}, unless you typed your own on the
         <a href="#bets">Betting</a> page.` : ""}</p>
       <div class="controls settings" style="margin-bottom:0">
