@@ -3,6 +3,7 @@ Measure prediction accuracy on past seasons.
 
     python backtest.py          # compare old vs current model
     python backtest.py --tune   # search model parameters (tuned on 2023-24 + 2024-25, checked on 2025-26)
+    python backtest.py --spread # how far results land from predictions (model.SIM, used by the betting page)
 
 Every game is predicted using only games played before it, exactly like the website does live.
 Past seasons are downloaded once into .cache/history/.
@@ -10,6 +11,7 @@ Past seasons are downloaded once into .cache/history/.
 
 import itertools
 import math
+import statistics
 import sys
 from collections import defaultdict
 
@@ -140,5 +142,32 @@ def tune():
     print("\nBest parameters on unseen season", CHECK_SEASONS, ":", fmt(metrics(check)))
 
 
+def spread():
+    """Residuals of predicted margin and total, for model.SIM."""
+    dm, dt = [], []
+    for s in TEST_SEASONS:
+        prior = model.preseason_prior(s, model.history_roster(s))
+        games = SEASONS[s]
+        teams = model.season_teams(games)
+        for date, day in itertools.groupby(games, key=lambda g: g["date"].date()):
+            day = list(day)
+            r = model.fit(games, teams, prior, as_of=day[0]["date"].replace(hour=0, minute=0))
+            for g in day:
+                hp, ap, _ = r.predict(g["home"], g["away"], g["neutral"])
+                dm.append(g["hs"] - g["as"] - (hp - ap))
+                dt.append(g["hs"] + g["as"] - (hp + ap))
+    print(f"{len(dm)} games")
+    print(f"  margin: bias {statistics.mean(dm):+.2f}  sd {statistics.pstdev(dm):.2f}")
+    print(f"  total:  bias {statistics.mean(dt):+.2f}  sd {statistics.pstdev(dt):.2f}")
+    print(f"  correlation {statistics.correlation(dm, dt):.3f}")
+    print(f"  total points mean abs error: model {statistics.mean(map(abs, dt)):.2f}")
+    print(f"  currently in model.SIM: {model.SIM}")
+
+
 if __name__ == "__main__":
-    tune() if "--tune" in sys.argv else report(TEST_SEASONS)
+    if "--tune" in sys.argv:
+        tune()
+    elif "--spread" in sys.argv:
+        spread()
+    else:
+        report(TEST_SEASONS)

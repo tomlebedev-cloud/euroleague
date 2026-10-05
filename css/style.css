@@ -134,3 +134,23 @@ button:disabled { opacity: .4; cursor: default; }
 
 .pick { font-size: .8rem; padding: 2px 8px; border-radius: 99px; background: var(--accent); color: #fff; }
 .note { font-size: .85rem; color: var(--muted); }
+
+/* ---------- Betting ---------- */
+input[type=number] { font: inherit; width: 84px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+.settings label { display: flex; align-items: center; gap: 6px; font-size: .9rem; }
+.settings input[type=number] { width: 72px; }
+.model-line { margin: 4px 0 10px; font-size: .92rem; }
+.odds-grid { display: grid; grid-template-columns: 80px repeat(3, minmax(0, 1fr)); gap: 8px 12px; align-items: center; margin: 10px 0; font-size: .85rem; }
+.odds-grid label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.odds-grid input[type=number] { width: 100%; min-width: 0; }
+.odds-grid .lbl { font-weight: 600; }
+details.lines { margin-bottom: 8px; font-size: .88rem; }
+details.lines summary { cursor: pointer; color: var(--muted); }
+details.lines table { margin-top: 8px; }
+tr.value td { background: rgba(31, 157, 85, .12); font-weight: 600; }
+button.link { border: none; background: none; padding: 0; color: var(--accent); font-size: .85rem; }
+@media (max-width: 560px) {
+  .odds-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .odds-grid .lbl { grid-column: 1 / -1; margin-top: 4px; }
+  .odds-grid > span:empty { display: none; }
+}

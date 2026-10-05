@@ -14,6 +14,7 @@ Plain HTML, CSS and JavaScript, plus one small Python script that downloads the 
 | **Schedule** | Go round by round through all 38 rounds, filter by team |
 | **Game** | Played: quarter scores and full box score for both teams. Upcoming: prediction, earlier meetings, both rosters |
 | **Predictions** | Win probability and predicted score for the next two rounds, plus a "pick any two teams" tool |
+| **Betting** | Next round simulated 40,000 times per game; compare with bookmaker odds, find value bets, keep a bet log |
 
 ## Run it
 
@@ -84,6 +85,23 @@ unstable value. Run `python backtest.py` to reproduce, `python backtest.py --tun
 The site also shows the model's live track record for the current season, and on every finished game
 what it predicted before tip-off.
 
+### Betting page
+
+For each game of the next round the page simulates 40,000 final scores: margin and total are drawn
+around the model's prediction with the spread measured on past seasons (`python backtest.py --spread`,
+stored in `model.SIM`: margin ±11.5, total ±17 points). Ties go to overtime. From the simulations it
+shows fair odds, a fair handicap and total, and model chances at nearby lines.
+
+Type in a bookmaker's decimal odds (winner, handicap, total). The page removes the bookmaker margin,
+blends the model's chance with the bookmaker's ("model weight", default 50%, because the bookmaker knows
+about injuries and news), and shows the expected value and a stake (¼ Kelly, at most 2% of the bankroll).
+Odds, settings and the bet log are saved in your browser only; bet results settle automatically after the
+data update.
+
+The model has a real edge over a coin flip on winners and margins, but totals are weak (mean error 13.3
+points vs 13.9 for the plain league average), and no test against real bookmaker odds has been done. Treat
+"value" as a signal to look closer, not a sure thing.
+
 Standings are sorted by wins, then point difference. The official EuroLeague tie-breaker (head-to-head)
 can differ when teams are level.
 
@@ -93,6 +111,7 @@ can differ when teams are level.
 index.html       page layout and navigation
 css/style.css    styles (light + dark mode)
 js/app.js        pages, standings and stats
+js/betting.js    betting page: simulation, odds comparison, bet log
 js/data.js       generated data — don't edit by hand
 update_data.py   downloads data from the EuroLeague API
 model.py         prediction model

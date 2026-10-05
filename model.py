@@ -35,6 +35,10 @@ NEW_TEAM_PRIOR = (-1.0, 1.0)  # (offense, defense) for teams not in last season:
 LOGISTIC_SCALE = 5.7          # margin -> probability: p = 1 / (1 + exp(-margin / scale))
 DEFAULT_AVERAGE = 80.0        # league points per team per game when nothing is known
 
+# How far real results land from the prediction (python backtest.py --spread, 1,063 games 2023-24 to 2025-26).
+# The betting page simulates games with these: final margin and total ~ normal(prediction + bias, sd).
+SIM = {"sdMargin": 11.5, "marginBias": 0.6, "sdTotal": 17.0, "totalBias": 1.2, "corr": 0.0}
+
 
 def parse_date(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
@@ -93,7 +97,7 @@ class Ratings:
 
     def to_json(self, teams):
         return {
-            "avg": round(self.avg, 2), "hca": self.hca, "scale": self.scale,
+            "avg": round(self.avg, 2), "hca": self.hca, "scale": self.scale, "sim": SIM,
             "teams": {t: [round(self.off.get(t, NEW_TEAM_PRIOR[0]), 2), round(self.dfn.get(t, NEW_TEAM_PRIOR[1]), 2)]
                       for t in teams},
         }
