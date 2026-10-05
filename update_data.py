@@ -128,6 +128,7 @@ def main():
             "code": g["gameCode"],
             "round": g["round"],
             "date": g["localDate"],
+            "utc": g["utcDate"],
             "venue": ((g.get("venue") or {}).get("name") or "").title(),
             "home": home,
             "away": away,

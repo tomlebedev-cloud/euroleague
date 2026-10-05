@@ -158,3 +158,5 @@ label.lineup { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; f
 label.lineup small { color: var(--muted); margin-left: auto; }
 .out-line { margin: -4px 0 8px; }
 label.lineup.key span { font-weight: 600; }
+label.button-like { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); cursor: pointer; }
+input[type=number]:disabled { opacity: .6; }

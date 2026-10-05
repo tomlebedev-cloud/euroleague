@@ -98,6 +98,12 @@ about injuries and news), and shows the expected value and a stake (¼ Kelly, at
 Odds, settings and the bet log are saved in your browser only; bet results settle automatically after the
 data update.
 
+**Odds history.** Every set of odds you type is saved with the model's chances at that moment (edits within
+30 minutes replace the last save, later ones are added, so line moves are kept). Odds lock at tip-off. For
+finished games the page compares the model's and the bookmaker's log loss per market, and the result of
+1 € on every value bet. Everything stays in the browser; **Export / Import** moves it to another device
+or keeps a backup.
+
 **Line-ups.** Each team's three most productive regulars (PIR per game, early in the season leaning on
 last season) are its key players. Every key player who doesn't play costs his team 1.5 points of margin.
 Players who missed the team's latest game are marked out automatically; tick or untick players from the

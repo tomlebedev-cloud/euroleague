@@ -2,7 +2,8 @@
 //  Betting page (#bets): Monte Carlo simulation of the next round,
 //  compared with bookmaker odds you type in (e.g. TopSport).
 //  Loaded after app.js and uses its helpers (esc, teamById, predict, ...).
-//  Odds, settings and your bet log are saved in this browser only.
+//  Odds, odds history, settings and your bet log are saved in this browser only
+//  (Export / Import moves them to another browser).
 // =====================================================================
 
 // Spread of real results around the model's prediction, measured by backtest.py
@@ -24,6 +25,9 @@ const betSettings = Object.assign(
 const odds = load("bets.odds", {});   // game code -> { ml: [h, a], hcp: [line, h, a], tot: [line, o, u] }
 let myBets = load("bets.log", []);    // [{ id, code, market, side, line, odds, stake, placed }]
 const lineups = load("bets.out", {});  // game code -> { player code: true (out) / false (plays) }
+// every set of odds you typed, with the model's chances at that moment (the model changes after each round):
+// game code -> [{ t: time, out: key players out, sels: [{ market, side, line, odds, fair, model, push }] }]
+let oddsLog = load("bets.oddsLog", {});
 
 // ---------- line-ups ----------
 // AVAILABILITY (from update_data.py): team -> regulars [[code, PIR per game, missed latest game, left club]],
@@ -139,16 +143,22 @@ function selections(g) {
     { side: "over", label: `Over ${o.tot[0]}`, odds: o.tot[1] },
     { side: "under", label: `Under ${o.tot[0]}`, odds: o.tot[2] }]);
 
-  const sim = simulate(g), w = betSettings.modelWeight / 100;
+  const sim = simulate(g);
   return out.map(s => {
     const c = chances(sim, s.market, s.side, s.line);
-    // the market price knows about injuries and news the model doesn't: blend toward it
-    const winNoPush = c.win / (1 - c.push || 1);
-    const blended = s.fair == null ? winNoPush : w * winNoPush + (1 - w) * s.fair;
-    const pWin = blended * (1 - c.push);
-    const ev = pWin * s.odds + c.push - 1;
-    return { ...s, game: g, model: c.win, push: c.push, pWin, ev, stake: stake(pWin, c.push, s.odds) };
+    return price({ ...s, game: g, model: c.win, push: c.push });
   });
+}
+
+// adds pWin (chance used), ev and stake to a selection with odds, fair (bookmaker) and model chances
+function price(s) {
+  const w = betSettings.modelWeight / 100;
+  // the bookmaker follows the news more closely than the model: blend toward its price
+  const winNoPush = s.model / (1 - s.push || 1);
+  const blended = s.fair == null ? winNoPush : w * winNoPush + (1 - w) * s.fair;
+  const pWin = blended * (1 - s.push);
+  const ev = pWin * s.odds + s.push - 1;
+  return { ...s, pWin, ev, stake: stake(pWin, s.push, s.odds) };
 }
 
 // fractional Kelly, capped; 0 when there's no edge
@@ -165,7 +175,8 @@ const evText = ev => `<span class="${ev > 0 ? "plus" : "minus"}">${ev > 0 ? "+" 
 const isValue = s => s.ev * 100 >= betSettings.minEdge && s.stake > 0;
 
 // ---------- my bets ----------
-function settle(b) {
+// 1 = won, 0 = refunded (push), -1 = lost, null = not played yet
+function outcome(b) {
   const g = gameByCode[b.code];
   if (!g || !g.score) return null;
   const m = g.score[0] - g.score[1], t = g.score[0] + g.score[1];
@@ -173,7 +184,144 @@ function settle(b) {
   if (b.market === "ml") x = b.side === "home" ? m : -m;
   else if (b.market === "hcp") x = b.side === "home" ? m + b.line : -m - b.line;
   else x = b.side === "over" ? t - b.line : b.line - t;
-  return x > 0 ? b.stake * (b.odds - 1) : x === 0 ? 0 : -b.stake;
+  return Math.sign(x);
+}
+function settle(b) {
+  const r = outcome(b);
+  return r === null ? null : r > 0 ? b.stake * (b.odds - 1) : r === 0 ? 0 : -b.stake;
+}
+
+// ---------- odds history ----------
+const tipOff = g => Date.parse(g.utc ? (/[Z+]/.test(g.utc.slice(10)) ? g.utc : g.utc + "Z") : g.date);
+const started = g => Date.now() >= tipOff(g);
+
+// save the odds typed for game g, with the model's chances now; edits within 30 minutes replace the last save
+function recordOdds(g) {
+  const sels = selections(g).filter(s => s.fair != null); // complete pairs only
+  const list = oddsLog[g.code] = oddsLog[g.code] || [];
+  const last = list[list.length - 1];
+  const recent = last && Date.now() - Date.parse(last.t) < 30 * 60 * 1000;
+  if (!sels.length) { // all odds cleared
+    if (recent) list.pop();
+    if (!list.length) delete oddsLog[g.code];
+  } else {
+    const p = gamePrediction(g);
+    const entry = {
+      t: new Date().toISOString(),
+      out: [...p.outHome, ...p.outAway].map(x => x[0]),
+      sels: sels.map(x => ({ market: x.market, side: x.side, line: x.line, odds: x.odds,
+        fair: +x.fair.toFixed(4), model: +x.model.toFixed(4), push: +x.push.toFixed(4) })),
+    };
+    if (recent) list[list.length - 1] = entry; else list.push(entry);
+  }
+  save("bets.oddsLog", oddsLog);
+}
+
+// the last odds saved before tip-off, for each finished game
+function closingOdds() {
+  return Object.entries(oddsLog).map(([code, list]) => {
+    const g = gameByCode[code];
+    if (!g || !g.score) return null;
+    const before = list.filter(e => Date.parse(e.t) < tipOff(g));
+    return before.length ? { g, e: before[before.length - 1] } : null;
+  }).filter(Boolean).sort((a, b) => tipOff(a.g) - tipOff(b.g));
+}
+
+function historyCard() {
+  const games = closingOdds();
+  const pending = Object.keys(oddsLog).filter(c => !gameByCode[c]?.score).length;
+  if (!games.length) {
+    return `<div class="card"><h2>Model vs bookmaker</h2>
+      <p class="muted">Odds you type in are saved automatically with the model's chances at that moment.
+        Once games are played, this shows whether the model or the bookmaker priced them better.
+        ${pending ? `Saved so far: ${pending} game${pending > 1 ? "s" : ""} waiting for results.` : ""}</p></div>`;
+  }
+  // accuracy: log loss of both on the side that the odds were on (home / over), pushes left out
+  const acc = { ml: [0, 0, 0], hcp: [0, 0, 0], tot: [0, 0, 0] }; // [games, model loss, bookmaker loss]
+  const flat = { n: 0, won: 0, profit: 0 }; // 1 unit on every value bet
+  const rows = [];
+  for (const { g, e } of games) {
+    for (const s of e.sels) {
+      const r = outcome({ code: g.code, ...s });
+      if (s.side === "home" || s.side === "over") {
+        if (r !== 0) {
+          const hit = r > 0, a = acc[s.market];
+          const pm = Math.min(Math.max(s.model / (1 - s.push || 1), 1e-4), 1 - 1e-4);
+          a[0]++;
+          a[1] -= Math.log(hit ? pm : 1 - pm);
+          a[2] -= Math.log(hit ? s.fair : 1 - s.fair);
+        }
+      }
+      const priced = price(s);
+      if (isValue(priced)) {
+        flat.n++;
+        flat.won += r > 0;
+        flat.profit += r > 0 ? s.odds - 1 : r < 0 ? -1 : 0;
+        rows.push({ g, s, priced, r });
+      }
+    }
+  }
+  const names = { ml: "Winner", hcp: "Handicap", tot: "Total" };
+  const accRows = Object.entries(acc).filter(([, a]) => a[0]).map(([k, a]) => {
+    const m = a[1] / a[0], b = a[2] / a[0];
+    return `<tr><td class="left">${names[k]}</td><td>${a[0]}</td><td>${m.toFixed(3)}</td><td>${b.toFixed(3)}</td>
+      <td class="${m < b ? "plus" : "minus"}">${m < b ? "model" : "bookmaker"}</td></tr>`;
+  }).join("");
+  const fmtOut = r => r > 0 ? `<span class="plus">won</span>` : r < 0 ? `<span class="minus">lost</span>` : "push";
+  return `<div class="card">
+    <h2>Model vs bookmaker</h2>
+    <p class="note" style="margin-top:0">${games.length} finished game${games.length > 1 ? "s" : ""} with odds saved before
+      tip-off${pending ? ` · ${pending} waiting for results` : ""}. Lower log loss = better chances.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="left">Market</th><th>Games</th><th>Model</th><th>Bookmaker</th><th>Better</th></tr></thead>
+      <tbody>${accRows || "<tr><td colspan='5' class='muted left'>No complete odds yet.</td></tr>"}</tbody>
+    </table></div>
+    <p class="record">Every value bet at 1 € (current settings): <b>${flat.n}</b> bets, ${flat.won} won, profit
+      <b class="${flat.profit >= 0 ? "plus" : "minus"}">${flat.profit >= 0 ? "+" : ""}${flat.profit.toFixed(2)} €</b>
+      ${flat.n ? `(${(100 * flat.profit / flat.n).toFixed(1)}% ROI)` : ""}</p>
+    ${rows.length ? `<details class="lines"><summary>Value bets in detail</summary><div class="table-wrap"><table>
+      <thead><tr><th class="left">Game</th><th class="left">Bet</th><th>Odds</th><th>Model</th><th>Value</th><th>Final</th><th>Result</th></tr></thead>
+      <tbody>${rows.map(({ g, s, priced, r }) => `<tr>
+        <td class="left"><a href="#game/${g.code}">R${g.round} ${esc(teamById[g.home].short)}–${esc(teamById[g.away].short)}</a></td>
+        <td class="left">${esc(betLabel(g, s))}</td><td>${s.odds.toFixed(2)}</td><td>${pct(s.model)}</td>
+        <td>${evText(priced.ev)}</td><td>${g.score.join("–")}</td><td>${fmtOut(r)}</td></tr>`).join("")}</tbody>
+    </table></div></details>` : ""}
+    <p class="note">Judge this after 100+ bets: over a few rounds it is mostly luck. A model that beats the
+      bookmaker's log loss over a season is rare; profit without that is probably luck too.</p>
+  </div>`;
+}
+
+function betLabel(g, s) {
+  const h = teamById[g.home], a = teamById[g.away];
+  if (s.market === "ml") return `${(s.side === "home" ? h : a).name} to win`;
+  if (s.market === "hcp") return s.side === "home" ? `${h.name} ${signed(s.line)}` : `${a.name} ${signed(-s.line)}`;
+  return `${s.side === "over" ? "Over" : "Under"} ${s.line}`;
+}
+
+// move everything saved to another browser
+function exportData() {
+  const data = { version: 1, exported: new Date().toISOString(), oddsLog, myBets, lineups, odds, settings: betSettings };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `euroleague-bets-${new Date().toISOString().slice(0, 10)}.json` });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function importData(file) {
+  file.text().then(text => {
+    const d = JSON.parse(text);
+    // merge: imported odds history is added to what is here, newer entries win per game
+    for (const [code, list] of Object.entries(d.oddsLog || {})) {
+      const mine = oddsLog[code] || [];
+      const byTime = new Map([...mine, ...list].map(e => [e.t, e]));
+      oddsLog[code] = [...byTime.values()].sort((x, y) => Date.parse(x.t) - Date.parse(y.t));
+    }
+    const ids = new Set(myBets.map(b => b.id));
+    myBets = myBets.concat((d.myBets || []).filter(b => !ids.has(b.id)));
+    Object.assign(lineups, d.lineups || {});
+    Object.assign(odds, d.odds || {});
+    save("bets.oddsLog", oddsLog); save("bets.log", myBets); save("bets.out", lineups); save("bets.odds", odds);
+    route();
+  }).catch(() => alert("That file could not be read."));
 }
 
 function myBetsCard() {
@@ -208,7 +356,7 @@ function myBetsCard() {
 function oddsInput(code, key, i, placeholder, step = "0.01") {
   const v = odds[code]?.[key]?.[i];
   return `<input type="number" inputmode="decimal" step="${step}" data-code="${code}" data-key="${key}" data-i="${i}"
-    placeholder="${placeholder}" value="${v ?? ""}">`;
+    placeholder="${placeholder}" value="${v ?? ""}" ${started(gameByCode[code]) ? "disabled" : ""}>`;
 }
 
 function fairOdds(p) { return p > 0 ? (1 / p).toFixed(2) : "–"; }
@@ -269,6 +417,7 @@ function gameCard(g) {
   return `<div class="card bet-game" data-code="${g.code}">
     ${gameRow(g, true)}
     <div class="model-box">${modelBox(g)}</div>
+    ${started(g) ? `<p class="note">Started: odds are locked, the history keeps those saved before tip-off.</p>` : ""}
     <div class="odds-grid">
       <span class="lbl">Winner</span>
       <label>${esc(h.short)} ${oddsInput(g.code, "ml", 0, "odds")}</label>
@@ -302,7 +451,8 @@ function selTable(sels) {
 
 pages.bets = () => {
   const nr = nextRound();
-  if (!nr) return `<div id="betsPage"><h1>Betting</h1><div class="card"><p class="muted">No upcoming games.</p></div><div id="myBets">${myBetsCard()}</div></div>`;
+  if (!nr) return `<div id="betsPage"><h1>Betting</h1><div class="card"><p class="muted">No upcoming games.</p></div>
+    <div id="myBets">${myBetsCard()}</div><div id="history">${historyCard()}</div></div>`;
   const games = upcoming.filter(g => g.round === nr);
   const s = betSettings;
   return `<div id="betsPage"><h1>Betting — Round ${nr}</h1>
@@ -327,6 +477,16 @@ pages.bets = () => {
     <div class="card" id="bestBets"></div>
     ${games.map(gameCard).join("")}
     <div id="myBets">${myBetsCard()}</div>
+    <div id="history">${historyCard()}</div>
+    <div class="card">
+      <h2>Your data</h2>
+      <p class="note" style="margin-top:0">Odds history, bets and line-ups are saved in this browser only.
+        Export a file to keep a backup or to move them to your phone; importing adds to what is here.</p>
+      <div class="controls" style="margin-bottom:0">
+        <button id="exportBtn">Export</button>
+        <label class="button-like">Import <input type="file" id="importFile" accept="application/json,.json" hidden></label>
+      </div>
+    </div>
     <div class="card note">
       <h2>Read this before betting</h2>
       <p>The model picks about 67% of winners, but bookmakers' prices are usually at least as good, and their
@@ -375,7 +535,14 @@ setup.bets = () => {
     save("bets.odds", odds);
     renderGame(inp.closest(".bet-game"));
     renderBest();
+    scheduleRecord(gameByCode[code]);
   }));
+
+  const timers = {};
+  const scheduleRecord = g => {
+    clearTimeout(timers[g.code]);
+    timers[g.code] = setTimeout(() => { recordOdds(g); document.getElementById("history").innerHTML = historyCard(); }, 1500);
+  };
 
   // line-up changes: redraw that game's model part, keeping open sections open
   const redrawModel = card => {
@@ -395,7 +562,11 @@ setup.bets = () => {
     lineups[code][cb.dataset.player] = cb.checked;
     save("bets.out", lineups);
     redrawModel(card);
+    if (oddsLog[code] && !started(gameByCode[code])) scheduleRecord(gameByCode[code]);
   });
+
+  document.getElementById("exportBtn")?.addEventListener("click", exportData);
+  document.getElementById("importFile")?.addEventListener("change", e => e.target.files[0] && importData(e.target.files[0]));
 
   const fields = { sBankroll: "bankroll", sWeight: "modelWeight", sEdge: "minEdge", sKelly: "kelly", sMax: "maxPct" };
   Object.entries(fields).forEach(([id, key]) => {
@@ -416,6 +587,7 @@ setup.bets = () => {
       delete lineups[reset.dataset.reset];
       save("bets.out", lineups);
       redrawModel(reset.closest(".bet-game"));
+      if (oddsLog[reset.dataset.reset]) scheduleRecord(gameByCode[reset.dataset.reset]);
       return;
     }
     if (add) {
