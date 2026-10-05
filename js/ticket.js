@@ -1,0 +1,185 @@
+// =====================================================================
+//  Ticket page (#ticket): what the model would put on a betting ticket
+//  for the next round, and why. Uses the odds typed on the Betting page
+//  when there are any; otherwise shows the minimum odds each pick needs.
+//  Loaded after betting.js and uses its functions (simulate, selections, ...).
+// =====================================================================
+
+const MAX_LEGS = 3; // a combo longer than this multiplies the bookmaker's margin too much
+
+// ---------- reasons ----------
+function netRatings() {
+  const t = MODEL.teams;
+  const net = Object.keys(t).map(id => ({ id, net: t[id][0] - t[id][1] })).sort((a, b) => b.net - a.net);
+  const rank = {};
+  net.forEach((x, i) => { rank[x.id] = { pos: i + 1, net: x.net }; });
+  return rank;
+}
+
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
+
+// plain-language reasons for picking `side` ("home" / "away") in game g
+function reasons(g, side) {
+  const pick = side === "home" ? g.home : g.away, other = side === "home" ? g.away : g.home;
+  const P = teamById[pick], O = teamById[other];
+  const rank = netRatings(), table = computeStandings();
+  const row = id => table.find(r => r.id === id);
+  const p = gamePrediction(g);
+  const out = [];
+
+  const rp = rank[pick], ro = rank[other];
+  out.push(`Rating: ${esc(P.name)} ${ordinal(rp.pos)} of ${Object.keys(rank).length} (${signed(+rp.net.toFixed(1))} points per game
+    vs an average team), ${esc(O.name)} ${ordinal(ro.pos)} (${signed(+ro.net.toFixed(1))}).`);
+  if (!g.neutral) out.push(side === "home"
+    ? `Home court: worth about ${MODEL.hca} points.`
+    : `Plays away: the model already takes ${MODEL.hca} points off for that and still prefers ${esc(P.name)}.`);
+  const rP = row(pick), rO = row(other);
+  if (rP.gp) out.push(`This season: ${esc(P.short)} ${rP.w}–${rP.l} (${signed(rP.diff)}), form ${rP.form.join("") || "–"};
+    ${esc(O.short)} ${rO.w}–${rO.l} (${signed(rO.diff)}), form ${rO.form.join("") || "–"}.`);
+  if (rP.gp && rP.diff < rO.diff) out.push(`<span class="minus">Against: ${esc(O.short)} has the better start this season;
+    the model trusts last season and the rosters more than ${rP.gp} games. Bet smaller or skip.</span>`);
+  const meetings = played.filter(x => (x.home === pick && x.away === other) || (x.home === other && x.away === pick));
+  meetings.forEach(x => out.push(`Earlier this season: ${esc(teamById[x.home].short)} ${x.score[0]}–${x.score[1]} ${esc(teamById[x.away].short)}.`));
+  const outPick = side === "home" ? p.outHome : p.outAway, outOther = side === "home" ? p.outAway : p.outHome;
+  const nm = l => l.map(x => esc(playerName[x[0]] || x[0])).join(", ");
+  if (outOther.length) out.push(`${esc(O.short)} without key player${outOther.length > 1 ? "s" : ""} ${nm(outOther)}.`);
+  if (outPick.length) out.push(`<span class="minus">Risk: ${esc(P.short)} without ${nm(outPick)} (already in the numbers).</span>`);
+  if (played.length < 60) out.push(`<span class="muted">Early season: ratings still lean on last season and summer transfers,
+    so surprises are more likely than later.</span>`);
+  return out;
+}
+
+// ---------- picks ----------
+// each game's model favourite, with the minimum odds that make it worth betting
+function modelPicks(games) {
+  return games.map(g => {
+    const sim = simulate(g);
+    const pHome = chances(sim, "ml", "home", 0).win;
+    const side = pHome >= 0.5 ? "home" : "away", p = side === "home" ? pHome : 1 - pHome;
+    return { g, side, p, minOdds: (1 + betSettings.minEdge / 100) / p, pred: sim.pred };
+  }).sort((a, b) => b.p - a.p);
+}
+
+const confidence = p => p >= 0.75 ? ["strong", "plus"] : p >= 0.62 ? ["lean", ""] : ["toss-up", "minus"];
+
+// reasons for an over / under bet
+function totalReasons(g, side, line) {
+  const p = gamePrediction(g), table = computeStandings();
+  const row = id => table.find(r => r.id === id);
+  const out = [`Model total ${Math.round(p.total + SIM.totalBias)} vs the line ${line}
+    (${side === "over" ? "more" : "fewer"} points expected).`];
+  [g.home, g.away].forEach(id => {
+    const r = row(id), t = teamById[id];
+    if (r.gp) out.push(`${esc(t.short)} games average ${((r.pf + r.pa) / r.gp).toFixed(1)} points (${(r.pf / r.gp).toFixed(1)} scored,
+      ${(r.pa / r.gp).toFixed(1)} allowed).`);
+  });
+  out.push(`<span class="minus">Totals are the model's weakest market (average miss 13 points): smaller stakes.</span>`);
+  return out;
+}
+
+// one bet with its reasons. s: { market, side, line } (+ label)
+function legCard(g, s, extra) {
+  const isTotal = s.market === "tot";
+  const team = isTotal ? null : teamById[s.side === "home" ? g.home : g.away];
+  const title = s.label || (isTotal ? `${s.side === "over" ? "Over" : "Under"} ${s.line}` : `${team.name} to win`);
+  const why = isTotal ? totalReasons(g, s.side, s.line) : reasons(g, s.side);
+  return `<div class="leg">
+    <div class="leg-head">${team ? badge(team, "sm") : ""}<b>${esc(title)}</b>
+      <span class="muted">· ${esc(teamById[g.home].short)}–${esc(teamById[g.away].short)}, ${fmtDate(g.date)} ${fmtTime(g.date)}</span></div>
+    ${extra}
+    <ul class="why">${why.map(r => `<li>${r}</li>`).join("")}</ul>
+  </div>`;
+}
+
+function comboSummary(legs, pAll, oddsAll) {
+  const ev = oddsAll ? pAll * oddsAll - 1 : null;
+  const st = oddsAll ? stake(pAll, 0, oddsAll) : 0;
+  return `<p class="record">Combo of ${legs}: model chance all win <b>${pct(pAll)}</b>
+    ${oddsAll
+      ? ` · combined odds <b>${oddsAll.toFixed(2)}</b> · value ${evText(ev)} · stake ${st ? `<b>${st.toFixed(2)}</b>` : "– (no value)"}`
+      : ` · worth it only at combined odds of at least <b>${((1 + betSettings.minEdge / 100) / pAll).toFixed(2)}</b>`}</p>`;
+}
+
+pages.ticket = () => {
+  const nr = nextRound();
+  if (!nr) return `<h1>Ticket</h1><div class="card"><p class="muted">No upcoming games.</p></div>`;
+  const games = upcoming.filter(g => g.round === nr && !started(g));
+  if (!games.length) return `<h1>Ticket — Round ${nr}</h1><div class="card"><p class="muted">All games of this round have started.</p></div>`;
+
+  // with bookmaker odds: value bets; the combo takes the safest value legs from different games
+  const sels = games.flatMap(selections);
+  const value = sels.filter(isValue).sort((a, b) => b.ev - a.ev);
+  const comboLegs = [];
+  [...value].filter(s => s.pWin >= 0.55).sort((a, b) => b.pWin - a.pWin).forEach(s => {
+    if (comboLegs.length < MAX_LEGS && !comboLegs.some(x => x.game === s.game)) comboLegs.push(s);
+  });
+
+  const picks = modelPicks(games);
+  let ticket;
+  if (sels.length) {
+    const singles = value.length ? value.map(s => legCard(s.game, s,
+      `<p>Bet: <b>${esc(s.label)}</b> at <b>${s.odds.toFixed(2)}</b> · bookmaker ${pct(s.fair)} vs model ${pct(s.model)}
+        · value ${evText(s.ev)} · stake <b>${s.stake.toFixed(2)}</b></p>`)).join("")
+      : `<p class="muted">At the odds you entered nothing reaches ${betSettings.minEdge}% value. The honest ticket this round
+          is no ticket, or wait for the odds to move.</p>`;
+    const pAll = comboLegs.reduce((t, s) => t * s.pWin, 1), oAll = comboLegs.reduce((t, s) => t * s.odds, 1);
+    ticket = `
+      <div class="card">
+        <h2>1. Singles (recommended)</h2>
+        <p class="note" style="margin-top:0">Each bet on its own: the bookmaker's margin is paid once per bet.</p>
+        ${singles}
+      </div>
+      <div class="card">
+        <h2>2. Combo ticket</h2>
+        ${comboLegs.length >= 2
+          ? `<p class="note" style="margin-top:0">The ${comboLegs.length} most likely value bets from different games.</p>
+             ${comboLegs.map(s => `<p>• <b>${esc(s.label)}</b> at ${s.odds.toFixed(2)} (chance used ${pct(s.pWin)})</p>`).join("")}
+             ${comboSummary(comboLegs.length + " bets", pAll, oAll)}`
+          : `<p class="muted">Fewer than two value bets with a decent chance (55%+) in different games, so no combo.
+               Adding legs without value only adds the bookmaker's margin.</p>`}
+      </div>`;
+  } else {
+    const top = picks.filter(x => x.p >= 0.62).slice(0, MAX_LEGS);
+    const pAll = top.reduce((t, x) => t * x.p, 1);
+    ticket = `
+      <div class="card">
+        <h2>The model's ticket</h2>
+        <p class="note" style="margin-top:0">No TopSport odds entered yet (type them on the <a href="#bets">Betting</a> page).
+          Below are the model's ${top.length} most likely winners from different games. Each is worth betting only if
+          TopSport offers at least the minimum odds shown; lower than that and the bookmaker has the edge.</p>
+        ${top.map(x => legCard(x.g, { market: "ml", side: x.side }, `<p>Model chance <b>${pct(x.p)}</b> · predicted
+          ${x.pred.homePts}–${x.pred.awayPts} · fair odds ${(1 / x.p).toFixed(2)} · <b>bet only at ${x.minOdds.toFixed(2)} or more</b></p>`)).join("")}
+        ${top.length >= 2 ? comboSummary(top.length + " picks", pAll, null) : ""}
+      </div>`;
+  }
+
+  return `<h1>Ticket — Round ${nr}</h1>
+    <div class="card">
+      <p style="margin-top:0">What the model would put on a ticket for the next round and why. Settings (bankroll,
+        minimum value ${betSettings.minEdge}%, model weight ${betSettings.modelWeight}%) come from the
+        <a href="#bets">Betting</a> page, and so do the odds and line-ups you enter there.</p>
+    </div>
+    ${ticket}
+    <div class="card">
+      <h2>All games at a glance</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="left">Game</th><th class="left">Model pick</th><th>Chance</th><th>Fair odds</th><th>Bet at ≥</th><th>Confidence</th></tr></thead>
+        <tbody>${picks.map(x => {
+          const [label, cls] = confidence(x.p);
+          return `<tr><td class="left"><a href="#game/${x.g.code}">${esc(teamById[x.g.home].short)}–${esc(teamById[x.g.away].short)}</a></td>
+            <td class="left">${esc(teamById[x.side === "home" ? x.g.home : x.g.away].name)}</td><td>${pct(x.p)}</td>
+            <td>${(1 / x.p).toFixed(2)}</td><td><b>${x.minOdds.toFixed(2)}</b></td><td class="${cls}">${label}</td></tr>`;
+        }).join("")}</tbody>
+      </table></div>
+      <p class="note">Toss-ups (under 62%) are poor ticket material unless the odds are clearly above the minimum.</p>
+    </div>
+    <div class="card note">
+      <h2>Why singles beat long combos</h2>
+      <p>Every leg carries the bookmaker's margin (about 5%). Three legs at fair-ish odds lose about 15% on average;
+        a combo only makes sense when every leg has value on its own. The chances above assume the games are
+        independent, which they are when the legs come from different games.</p>
+      <p>The model picked about 67% of winners over the last three seasons, and it doesn't know about injuries
+        after each team's latest game: check the news and tick missing players on the Betting page.
+        Bet only money you can afford to lose. Help: Lošimų priežiūros tarnyba, tel. 8 800 222 99.</p>
+    </div>`;
+};

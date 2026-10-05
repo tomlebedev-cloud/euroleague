@@ -15,6 +15,7 @@ Plain HTML, CSS and JavaScript, plus one small Python script that downloads the 
 | **Game** | Played: quarter scores and full box score for both teams. Upcoming: prediction, earlier meetings, both rosters |
 | **Predictions** | Win probability and predicted score for the next two rounds, plus a "pick any two teams" tool |
 | **Betting** | Next round simulated 40,000 times per game; compare with bookmaker odds, find value bets, keep a bet log |
+| **Ticket** | Suggested ticket for the next round with the reasons for each pick: value singles, a combo only when every leg has value, and the minimum odds each pick needs |
 
 ## Run it
 
@@ -98,6 +99,10 @@ about injuries and news), and shows the expected value and a stake (¼ Kelly, at
 Odds, settings and the bet log are saved in your browser only; bet results settle automatically after the
 data update.
 
+**Odds template.** "Copy template" gives a plain-text form with every game of the round
+(`Win: home away`, `Hcp: line home away`, `Tot: line over under`); fill in the bookmaker's odds and paste it
+back with "Apply" (or paste it into a chat).
+
 **Odds history.** Every set of odds you type is saved with the model's chances at that moment (edits within
 30 minutes replace the last save, later ones are added, so line moves are kept). Odds lock at tip-off. For
 finished games the page compares the model's and the bookmaker's log loss per market, and the result of
@@ -126,6 +131,7 @@ index.html       page layout and navigation
 css/style.css    styles (light + dark mode)
 js/app.js        pages, standings and stats
 js/betting.js    betting page: simulation, odds comparison, bet log
+js/ticket.js     ticket page: suggested bets and the reasons for them
 js/data.js       generated data — don't edit by hand
 update_data.py   downloads data from the EuroLeague API
 model.py         prediction model

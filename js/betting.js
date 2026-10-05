@@ -191,6 +191,45 @@ function settle(b) {
   return r === null ? null : r > 0 ? b.stake * (b.odds - 1) : r === 0 ? 0 : -b.stake;
 }
 
+// ---------- odds template ----------
+// A plain-text form for all games of the round: fill in the bookmaker's odds and paste it back
+// (on this page, or into a chat). Lines: "#code Home – Away", "Win: home away",
+// "Hcp: home-line home away", "Tot: line over under". Missing numbers are simply skipped.
+function oddsTemplate(games) {
+  const v = x => x ?? "";
+  return `EuroLeague round ${games[0]?.round ?? ""} odds. Decimal odds; handicap line for the HOME team (e.g. -4.5).\n\n`
+    + games.map(g => {
+      const o = odds[g.code] || {}, h = teamById[g.home], a = teamById[g.away];
+      return `#${g.code} ${h.name} – ${a.name} (${fmtDate(g.date)} ${fmtTime(g.date)})
+Win: ${v(o.ml?.[0])} ${v(o.ml?.[1])}
+Hcp: ${v(o.hcp?.[0])} ${v(o.hcp?.[1])} ${v(o.hcp?.[2])}
+Tot: ${v(o.tot?.[0])} ${v(o.tot?.[1])} ${v(o.tot?.[2])}`;
+    }).join("\n\n");
+}
+
+// -> number of games updated
+function applyTemplate(text) {
+  let code = null, n = 0;
+  const changed = new Set();
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    const head = line.match(/^#(\d+)/);
+    if (head) { code = gameByCode[head[1]] && !started(gameByCode[head[1]]) ? head[1] : null; continue; }
+    const m = line.match(/^(win|hcp|tot)\s*:\s*(.*)$/i);
+    if (!code || !m) continue;
+    const nums = (m[2].match(/[-+]?\d+(?:[.,]\d+)?/g) || []).map(x => Number(x.replace(",", ".")));
+    const key = { win: "ml", hcp: "hcp", tot: "tot" }[m[1].toLowerCase()];
+    const size = key === "ml" ? 2 : 3;
+    if (nums.length < size) continue;
+    odds[code] = odds[code] || {};
+    odds[code][key] = nums.slice(0, size);
+    changed.add(code);
+  }
+  save("bets.odds", odds);
+  changed.forEach(c => { recordOdds(gameByCode[c]); n++; });
+  return n;
+}
+
 // ---------- odds history ----------
 const tipOff = g => Date.parse(g.utc ? (/[Z+]/.test(g.utc.slice(10)) ? g.utc : g.utc + "Z") : g.date);
 const started = g => Date.now() >= tipOff(g);
@@ -474,6 +513,14 @@ pages.bets = () => {
         <b>Value</b> = expected return per 1 € staked. <b>Stake</b> = ${s.kelly} Kelly, at most ${s.maxPct}% of bankroll.
       </p>
     </div>
+    <div class="card">
+      <h2>Odds template</h2>
+      <p class="note" style="margin-top:0">Faster than typing: copy the template, fill in TopSport's odds (in a notes app or
+        right here), then paste it back below and press Apply. The same text can be pasted into a chat with Claude.</p>
+      <div class="controls"><button id="copyTemplate">Copy template</button><button class="primary" id="applyTemplate">Apply</button>
+        <span id="templateMsg" class="note"></span></div>
+      <textarea id="templateBox" rows="8" spellcheck="false">${esc(oddsTemplate(games))}</textarea>
+    </div>
     <div class="card" id="bestBets"></div>
     ${games.map(gameCard).join("")}
     <div id="myBets">${myBetsCard()}</div>
@@ -566,6 +613,20 @@ setup.bets = () => {
   });
 
   document.getElementById("exportBtn")?.addEventListener("click", exportData);
+
+  const box = document.getElementById("templateBox"), msg = document.getElementById("templateMsg");
+  document.getElementById("copyTemplate")?.addEventListener("click", () => {
+    box.value = oddsTemplate(games);
+    box.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(box.value) : Promise.reject())
+      .then(() => { msg.textContent = "Copied."; }, () => { document.execCommand("copy"); msg.textContent = "Copied."; });
+  });
+  document.getElementById("applyTemplate")?.addEventListener("click", () => {
+    const n = applyTemplate(box.value);
+    route(); // redraw everything with the new odds
+    const m = document.getElementById("templateMsg");
+    if (m) m.textContent = n ? `Odds updated for ${n} game${n > 1 ? "s" : ""}.` : "No odds found: keep the #number lines.";
+  });
   document.getElementById("importFile")?.addEventListener("change", e => e.target.files[0] && importData(e.target.files[0]));
 
   const fields = { sBankroll: "bankroll", sWeight: "modelWeight", sEdge: "minEdge", sKelly: "kelly", sMax: "maxPct" };
