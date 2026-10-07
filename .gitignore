@@ -6,3 +6,4 @@ desktop.ini
 node_modules/
 .cache/
 __pycache__/
+apisports.key

@@ -122,6 +122,12 @@ into `.cache/history/`), each season predicted with the effect measured on the o
 points in every season, but the overall gain is small (winners right 66.6% → 66.8%), and that is with the
 real line-ups known. Summing every missing player's PIR worked worse than counting key players.
 
+**Pace.** Predicted totals add 1.3 points per possession that the two teams play above the league
+average this season (possessions from team box scores, shrunk toward the league with 5 games' weight).
+`python backtest.py --pace`: total-points error 12.69 → 12.66, 12.99 → 12.79 and 14.09 → 13.99 on 2023-24,
+2024-25 and 2025-26. Winner and margin predictions don't change. Taking shooting luck (3-point and free-throw
+percentages) out of the ratings was also tested (`--luck`) and made predictions worse, so it is off.
+
 The model has a real edge over a coin flip on winners and margins, but totals are weak (mean error 13.3
 points vs 13.9 for the plain league average), and no test against real bookmaker odds has been done. Treat
 "value" as a signal to look closer, not a sure thing.

@@ -200,11 +200,17 @@ def main():
     ratings = model.fit(model_games, teams, prior)
 
     # who plays: each team's regulars, their value, and who missed the latest game
+    # and how fast each team plays (possessions per game), for predicted totals
     av = model.Availability(model.history_player_totals(model.previous(SEASON_CODE)))
+    pace = model.Pace()
     for raw in sorted(played, key=lambda g: g["utcDate"]):
+        home, away = raw["local"]["club"]["code"], raw["road"]["club"]["code"]
         box = model.compact_box(boxes[raw["gameCode"]])
-        av.add(raw["local"]["club"]["code"], box["home"])
-        av.add(raw["road"]["club"]["code"], box["away"])
+        av.add(home, box["home"])
+        av.add(away, box["away"])
+        pace.add(home, away, model.compact_totals(boxes[raw["gameCode"]]))
+    model_json = ratings.to_json(teams)
+    model_json["pace"] = {t: round(pace.team(t), 2) for t in teams}
     # teams that weren't in last season's EuroLeague: their starting rating is only a rough guess
     new_teams = sorted(set(teams) - model.season_teams(model.history_games(model.previous(SEASON_CODE))))
 
@@ -226,7 +232,7 @@ def main():
         f"const UPDATED = {json.dumps(updated)};\n"
         f"const TEAMS = {json.dumps(sorted(teams.values(), key=lambda t: t['name']), ensure_ascii=False)};\n"
         f"const GAMES = {json.dumps(games, ensure_ascii=False, separators=(',', ':'))};\n"
-        f"const MODEL = {json.dumps(ratings.to_json(teams))};\n"
+        f"const MODEL = {json.dumps(model_json)};\n"
         f"const NEW_TEAMS = {json.dumps(new_teams)};\n"
         f"const AVAILABILITY = {json.dumps(availability, separators=(',', ':'))};\n"
     )

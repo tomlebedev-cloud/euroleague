@@ -104,6 +104,11 @@ function totalReasons(g, side, line) {
       ${(r.pa / r.gp).toFixed(1)} allowed).`, `${esc(t.short)} rungtynėse vidutiniškai ${((r.pf + r.pa) / r.gp).toFixed(1)} taško
       (${(r.pf / r.gp).toFixed(1)} pelnyta, ${(r.pa / r.gp).toFixed(1)} praleista).`));
   });
+  const pace = (MODEL.pace?.[g.home] || 0) + (MODEL.pace?.[g.away] || 0);
+  if (Math.abs(pace) >= 1) out.push(L(`Pace: these teams play ${Math.abs(pace).toFixed(1)} possessions ${pace > 0 ? "faster" : "slower"}
+    than average, worth ${signed(+(MODEL.paceBeta * pace).toFixed(1))} points on the total.`,
+    `Tempas: šios komandos žaidžia ${Math.abs(pace).toFixed(1)} atakos ${pace > 0 ? "greičiau" : "lėčiau"} nei vidutiniškai,
+    tai keičia totalą ${signed(+(MODEL.paceBeta * pace).toFixed(1))} taško.`));
   out.push(`<span class="minus">${L("Totals are the model's weakest market (average miss 13 points): smaller stakes.",
     "Totalai yra silpniausia modelio rinka (vidutiniškai prašauna 13 taškų): mažesnės sumos.")}</span>`);
   return out;

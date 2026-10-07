@@ -5,6 +5,8 @@ Measure prediction accuracy on past seasons.
     python backtest.py --tune   # search model parameters (tuned on 2023-24 + 2024-25, checked on 2025-26)
     python backtest.py --spread # how far results land from predictions (model.SIM, used by the betting page)
     python backtest.py --absences  # effect of missing players (model.ABSENCE); downloads box scores once
+    python backtest.py --luck   # take shooting luck out of the ratings (model.LUCK); downloads team totals once
+    python backtest.py --pace   # pace adjustment of predicted totals (model.PACE)
 
 Every game is predicted using only games played before it, exactly like the website does live.
 Past seasons are downloaded once into .cache/history/.
@@ -243,6 +245,74 @@ def absences():
     print(f"currently in model.ABSENCE: {model.ABSENCE}")
 
 
+# ---------- shooting luck ----------
+def luck_predictions(season, three, free):
+    """-> [(game, home pts, away pts)] with ratings fitted on luck-adjusted scores (results stay real)"""
+    prior = model.preseason_prior(season, model.history_roster(season))
+    games = SEASONS[season]
+    fit_games = model.luck_adjusted(games, model.history_team_totals(season), three, free)
+    teams = model.season_teams(games)
+    out = []
+    for date, day in itertools.groupby(games, key=lambda g: g["date"].date()):
+        day = list(day)
+        r = model.fit(fit_games, teams, prior, as_of=day[0]["date"].replace(hour=0, minute=0))
+        out += [(g, *r.predict(g["home"], g["away"], g["neutral"])[:2]) for g in day]
+    return out
+
+
+def luck_metrics(rows):
+    sim, dist = model.SIM, statistics.NormalDist()
+    ll = mae = tot = right = 0.0
+    for g, hp, ap in rows:
+        m = hp - ap
+        mae += abs(g["hs"] - g["as"] - m)
+        tot += abs(g["hs"] + g["as"] - (hp + ap) - sim["totalBias"])
+        right += (m + sim["marginBias"] > 0) == (g["hs"] > g["as"])
+        p = min(max(dist.cdf((m + sim["marginBias"]) / sim["sdMargin"]), 1e-6), 1 - 1e-6)
+        ll -= math.log(p if g["hs"] > g["as"] else 1 - p)
+    n = len(rows)
+    return {"log_loss": ll / n, "margin_error": mae / n, "total_error": tot / n, "accuracy": right / n}
+
+
+def luck():
+    """Tuned on 2023-24 + 2024-25, checked on 2025-26."""
+    results = []
+    for three in (0, 0.25, 0.5, 0.75, 1.0):
+        for free in (0, 0.5, 1.0):
+            rows = [r for s in TUNE_SEASONS for r in luck_predictions(s, three, free)]
+            m = luck_metrics(rows)
+            results.append((m["log_loss"], three, free))
+            print(f"  three {three:.2f} free {free:.1f}: log loss {m['log_loss']:.4f}, winners {m['accuracy']:.1%}, "
+                  f"margin error {m['margin_error']:.2f}, total error {m['total_error']:.2f}", flush=True)
+    _, three, free = min(results)
+    print(f"\nBest on {TUNE_SEASONS}: three {three}, free {free}")
+    for s in CHECK_SEASONS:
+        before, after = luck_metrics(luck_predictions(s, 0, 0)), luck_metrics(luck_predictions(s, three, free))
+        print(f"  unseen {s}: log loss {before['log_loss']:.4f} -> {after['log_loss']:.4f}, winners "
+              f"{before['accuracy']:.1%} -> {after['accuracy']:.1%}, margin error {before['margin_error']:.2f} -> "
+              f"{after['margin_error']:.2f}, total error {before['total_error']:.2f} -> {after['total_error']:.2f}")
+    print(f"currently in model.LUCK: {model.LUCK}")
+
+
+# ---------- pace ----------
+def pace():
+    """Total-points error with and without the pace adjustment; beta measured per season."""
+    for s in TEST_SEASONS:
+        totals = model.history_team_totals(s)
+        pc = model.Pace()
+        xs, ys = [], []
+        for g, hp, ap in season_predictions(s):
+            xs.append(pc.team(g["home"]) + pc.team(g["away"]))
+            ys.append(g["hs"] + g["as"] - (hp + ap) - model.SIM["totalBias"])
+            pc.add(g["home"], g["away"], totals[g["code"]])
+        best = sum(x * y for x, y in zip(xs, ys)) / sum(x * x for x in xs)
+        beta = model.PACE["beta"]
+        before = statistics.mean(abs(y) for y in ys)
+        after = statistics.mean(abs(y - beta * x) for x, y in zip(xs, ys))
+        print(f"{s}: total error {before:.2f} -> {after:.2f} with beta {beta} (this season alone would pick {best:.2f})")
+    print(f"currently in model.PACE: {model.PACE}")
+
+
 if __name__ == "__main__":
     if "--tune" in sys.argv:
         tune()
@@ -250,5 +320,9 @@ if __name__ == "__main__":
         spread()
     elif "--absences" in sys.argv:
         absences()
+    elif "--luck" in sys.argv:
+        luck()
+    elif "--pace" in sys.argv:
+        pace()
     else:
         report(TEST_SEASONS)

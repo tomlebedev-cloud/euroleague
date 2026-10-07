@@ -52,7 +52,9 @@ function gamePrediction(g) {
   const p = predict(g.home, g.away, g.neutral);
   const outHome = keyOut(g, g.home), outAway = keyOut(g, g.away);
   const shift = ABS.perPlayer * (outAway.length - outHome.length); // home margin change; total unchanged
-  const margin = p.margin + shift, total = p.total;
+  // fast teams make for more points: possessions above the league average (model.PACE, backtest.py --pace)
+  const paceOf = id => (MODEL.pace && MODEL.pace[id]) || 0;
+  const margin = p.margin + shift, total = p.total + (MODEL.paceBeta || 0) * (paceOf(g.home) + paceOf(g.away));
   let hp = Math.round((total + margin) / 2), ap = Math.round((total - margin) / 2);
   if (hp === ap) margin >= 0 ? hp++ : ap++;
   return { homePts: hp, awayPts: ap, margin, total, shift, outHome, outAway };

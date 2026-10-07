@@ -108,6 +108,7 @@ class Ratings:
         return {
             "avg": round(self.avg, 2), "hca": self.hca, "scale": self.scale, "sim": SIM,
             "absence": {"keyPlayers": ABSENCE["keyPlayers"], "perPlayer": ABSENCE["perPlayer"]},
+            "paceBeta": PACE["beta"],
             "teams": {t: [round(self.off.get(t, NEW_TEAM_PRIOR[0]), 2), round(self.dfn.get(t, NEW_TEAM_PRIOR[1]), 2)]
                       for t in teams},
         }
@@ -169,6 +170,71 @@ def fit(games, teams, prior=None, as_of=None, *, prior_strength=PRIOR_STRENGTH,
             b[def_j] += w * y
     x = _solve(a, b)
     return Ratings(avg, {t: x[idx[t]] for t in teams}, {t: x[n + idx[t]] for t in teams}, hca, scale)
+
+
+# Shooting luck (python backtest.py --luck). Three-point and free-throw percentages swing a lot from game
+# to game and mostly by chance, so ratings are fitted on scores with part of that luck taken out:
+#   points - three * 3 * (3PM - 3PA * league 3P%) - free * (FTM - FTA * league FT%)
+LUCK = {"three": 0.0, "free": 0.0}
+
+
+def luck_adjusted(games, totals, three=None, free=None):
+    """games (simplify_games) -> copies with shooting luck partly removed from the scores.
+    totals: game code -> compact_totals; games without totals stay as they are.
+    League percentages are this season's so far (only earlier games)."""
+    three = LUCK["three"] if three is None else three
+    free = LUCK["free"] if free is None else free
+    if not three and not free:
+        return games
+    made = [0.0, 0.0, 0.0, 0.0]  # 3PM, 3PA, FTM, FTA so far
+    out = []
+    for g in games:
+        t = totals.get(g["code"])
+        if not t:
+            out.append(g)
+            continue
+        p3 = made[0] / made[1] if made[1] > 500 else 0.355
+        pft = made[2] / made[3] if made[3] > 500 else 0.77
+        adj = []
+        for side in ("home", "away"):
+            _, _, m3, a3, mft, aft, *_ = t[side]
+            adj.append(-three * 3 * (m3 - a3 * p3) - free * (mft - aft * pft))
+        out.append({**g, "hs": g["hs"] + adj[0], "as": g["as"] + adj[1]})
+        for side in ("home", "away"):
+            _, _, m3, a3, mft, aft, *_ = t[side]
+            made[0] += m3; made[1] += a3; made[2] += mft; made[3] += aft
+    return out
+
+
+# Pace (python backtest.py --pace). A team's pace = its games' possessions above the league average so far,
+# shrunk toward the league with `shrink` games of weight. The ratings already predict points; fast or slow
+# teams add beta * (home pace + away pace) points to the predicted total (the margin doesn't change).
+PACE = {"beta": 1.3, "shrink": 5}
+
+
+def possessions(t):
+    """compact_totals side -> possessions"""
+    return t[1] + t[3] + 0.44 * t[5] - t[6] + t[8]
+
+
+class Pace:
+    def __init__(self, shrink=None):
+        self.k = PACE["shrink"] if shrink is None else shrink
+        self.sum, self.n, self.league = {}, {}, []
+
+    def league_pace(self):
+        return sum(self.league) / len(self.league) if len(self.league) >= 5 else 72.0
+
+    def team(self, team):
+        lg = self.league_pace()
+        return (self.sum.get(team, 0) + self.k * lg) / (self.n.get(team, 0) + self.k) - lg
+
+    def add(self, home, away, totals):
+        p = (possessions(totals["home"]) + possessions(totals["away"])) / 2
+        self.league.append(p)
+        for t in (home, away):
+            self.sum[t] = self.sum.get(t, 0) + p
+            self.n[t] = self.n.get(t, 0) + 1
 
 
 class Availability:
@@ -252,6 +318,11 @@ def fetch_json(url, attempts=20):
             wait = int(e.headers.get("Retry-After") or 30)
             print(f"  API rate limit reached, waiting {wait}s...", flush=True)
             time.sleep(wait + 1)
+        except (urllib.error.URLError, TimeoutError) as e:  # connection dropped: wait and try again
+            if i == attempts - 1:
+                raise
+            print(f"  connection problem ({e}), retrying in 60s...", flush=True)
+            time.sleep(60)
 
 
 def _cached(name, url):
@@ -306,6 +377,37 @@ def history_boxes(season):
     missing = sum(not (folder / f"{c}.json").exists() for c in codes)
     if missing:
         print(f"  downloading {missing} box scores of {season}...", flush=True)
+    with ThreadPoolExecutor(2) as pool:
+        return dict(pool.map(one, codes))
+
+
+TOTAL_KEYS = ("fieldGoalsMade2", "fieldGoalsAttempted2", "fieldGoalsMade3", "fieldGoalsAttempted3",
+              "freeThrowsMade", "freeThrowsAttempted", "offensiveRebounds", "defensiveRebounds", "turnovers", "points")
+
+
+def compact_totals(box):
+    """API box score -> {"home": [2PM, 2PA, 3PM, 3PA, FTM, FTA, OREB, DREB, TOV, PTS], "away": [...]}"""
+    return {side: [box[api_side]["total"].get(k) or 0 for k in TOTAL_KEYS]
+            for side, api_side in (("home", "local"), ("away", "road"))}
+
+
+def history_team_totals(season):
+    """game code -> team totals (compact_totals) for every played game of a finished season.
+    Each game is saved as soon as it is downloaded, so an interrupted download resumes."""
+    folder = HISTORY / f"totals_{season}"
+    folder.mkdir(parents=True, exist_ok=True)
+    url = f"https://api-live.euroleague.net/v2/competitions/E/seasons/{season}/games/{{}}/stats"
+
+    def one(code):
+        f = folder / f"{code}.json"
+        if not f.exists():
+            f.write_text(json.dumps(compact_totals(fetch_json(url.format(code)))), encoding="utf-8")
+        return code, json.loads(f.read_text(encoding="utf-8"))
+
+    codes = [g["code"] for g in history_games(season)]
+    missing = sum(not (folder / f"{c}.json").exists() for c in codes)
+    if missing:
+        print(f"  downloading {missing} team box scores of {season}...", flush=True)
     with ThreadPoolExecutor(2) as pool:
         return dict(pool.map(one, codes))
 
