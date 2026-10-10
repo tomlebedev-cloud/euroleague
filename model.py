@@ -22,6 +22,7 @@ Parameters below were chosen with backtest.py on past seasons.
 
 import json
 import math
+import random
 import time
 import urllib.error
 import urllib.request
@@ -292,6 +293,53 @@ def absence_effect(home_out, away_out, per_player=None):
     """key players out -> (home points change, away points change); the total stays the same"""
     d = (ABSENCE["perPlayer"] if per_player is None else per_player) * (away_out - home_out) / 2
     return d, -d
+
+
+# Season forecast (python backtest.py --season). The rest of the regular season is played out `runs` times:
+# every game's margin ~ normal(predicted margin + SIM bias, SIM sdMargin), and in each run every team's
+# strength is also shifted by normal(0, ratingSd) points, because the ratings themselves are uncertain.
+SEASON_SIM = {"runs": 10000, "ratingSd": 2.5}
+
+
+def simulate_season(ratings, teams, done, todo, runs=None, rating_sd=None, seed=2026):
+    """
+    done: [(home, away, home margin)] regular-season games already played
+    todo: [(home, away)] regular-season games still to play
+    -> team -> [P(finish 1-6), P(finish 7-10), expected final wins]
+    Ties are ordered by wins, then point difference (the official head-to-head rule is not simulated).
+    The seed is fixed so the same data always gives the same forecast.
+    """
+    runs = SEASON_SIM["runs"] if runs is None else runs
+    rating_sd = SEASON_SIM["ratingSd"] if rating_sd is None else rating_sd
+    rng = random.Random(seed)
+    teams = sorted(teams)
+    base_w = dict.fromkeys(teams, 0)
+    base_d = dict.fromkeys(teams, 0.0)
+    for h, a, m in done:
+        base_w[h if m > 0 else a] += 1
+        base_d[h] += m
+        base_d[a] -= m
+    pred = []
+    for h, a in todo:
+        hp, ap, _ = ratings.predict(h, a)
+        pred.append((h, a, hp - ap + SIM["marginBias"]))
+    sd = SIM["sdMargin"]
+    out = {t: [0, 0, 0] for t in teams}
+    for _ in range(runs):
+        shift = {t: rng.gauss(0, rating_sd) for t in teams} if rating_sd else dict.fromkeys(teams, 0.0)
+        w, d = dict(base_w), dict(base_d)
+        for h, a, m in pred:
+            x = m + shift[h] - shift[a] + rng.gauss(0, sd)
+            w[h if x > 0 else a] += 1
+            d[h] += x
+            d[a] -= x
+        for i, t in enumerate(sorted(teams, key=lambda t: (-w[t], -d[t]))):
+            if i < 6:
+                out[t][0] += 1
+            elif i < 10:
+                out[t][1] += 1
+            out[t][2] += w[t]
+    return {t: [v[0] / runs, v[1] / runs, v[2] / runs] for t, v in out.items()}
 
 
 def season_teams(games):

@@ -7,6 +7,7 @@ Measure prediction accuracy on past seasons.
     python backtest.py --absences  # effect of missing players (model.ABSENCE); downloads box scores once
     python backtest.py --luck   # take shooting luck out of the ratings (model.LUCK); downloads team totals once
     python backtest.py --pace   # pace adjustment of predicted totals (model.PACE)
+    python backtest.py --season # season forecast (model.SEASON_SIM): chances of finishing top 6 / top 10
 
 Every game is predicted using only games played before it, exactly like the website does live.
 Past seasons are downloaded once into .cache/history/.
@@ -325,6 +326,53 @@ def pace():
     print(f"currently in model.PACE: {model.PACE}")
 
 
+# ---------- season forecast ----------
+def season_rows(rating_sd, runs=1500, checkpoints=(0, 4, 10, 20)):
+    """Forecast each past season before round 1 and after rounds 4, 10 and 20, and compare with how it ended.
+    -> [(P top 6, finished top 6, P top 10, finished top 10, expected wins, wins, checkpoint)]"""
+    rows = []
+    for season in TEST_SEASONS:
+        raw = model._cached(f"{season}.json", model.API_V2.format(season=season))["data"]
+        raw = sorted((g for g in raw if g["phaseType"]["code"] == "RS" and g["played"]), key=lambda g: g["utcDate"])
+        games = [(g["round"], g["local"]["club"]["code"], g["road"]["club"]["code"],
+                  g["local"]["score"] - g["road"]["score"], g["utcDate"]) for g in raw]
+        teams = sorted({g[1] for g in games} | {g[2] for g in games})
+        wins, diff = dict.fromkeys(teams, 0), dict.fromkeys(teams, 0)
+        for _, h, a, m, _ in games:
+            wins[h if m > 0 else a] += 1
+            diff[h] += m
+            diff[a] -= m
+        order = sorted(teams, key=lambda t: (-wins[t], -diff[t]))
+        prior = model.preseason_prior(season, model.history_roster(season))
+        for cp in checkpoints:
+            todo = [g for g in games if g[0] > cp]
+            ratings = model.fit(SEASONS[season], teams, prior,
+                                as_of=model.parse_date(todo[0][4]).replace(hour=0, minute=0))
+            res = model.simulate_season(ratings, teams, [g[1:4] for g in games if g[0] <= cp],
+                                        [g[1:3] for g in todo], runs, rating_sd, seed=cp)
+            for t in teams:
+                pos = order.index(t)
+                rows.append((res[t][0], pos < 6, res[t][0] + res[t][1], pos < 10, res[t][2], wins[t], cp))
+    return rows
+
+
+def season():
+    for sd in (0, 1.5, 2.5, 3.5, 4.5):
+        rows = season_rows(sd)
+        brier = lambda i, j: sum((r[i] - r[j]) ** 2 for r in rows) / len(rows)
+        wins = {cp: statistics.mean(abs(r[4] - r[5]) for r in rows if r[6] == cp) for cp in (0, 4, 10, 20)}
+        print(f"rating sd {sd}: Brier top 6 {brier(0, 1):.4f}, top 10 {brier(2, 3):.4f}; final wins off by "
+              + ", ".join(f"{v:.1f} after round {cp}" for cp, v in wins.items()), flush=True)
+    rows = season_rows(model.SEASON_SIM["ratingSd"], runs=3000)
+    print(f"\nCalibration with model.SEASON_SIM {model.SEASON_SIM}:")
+    for name, i, j in (("top 6", 0, 1), ("top 10", 2, 3)):
+        for lo, hi in ((0, .1), (.1, .3), (.3, .5), (.5, .7), (.7, .9), (.9, 1.01)):
+            sel = [r for r in rows if lo <= r[i] < hi]
+            if sel:
+                print(f"  {name}: forecast {lo:.0%}-{min(hi, 1):.0%} (average {statistics.mean(r[i] for r in sel):.0%}) "
+                      f"happened {statistics.mean(r[j] for r in sel):.0%} of {len(sel)} times")
+
+
 if __name__ == "__main__":
     if "--tune" in sys.argv:
         tune()
@@ -336,5 +384,7 @@ if __name__ == "__main__":
         luck()
     elif "--pace" in sys.argv:
         pace()
+    elif "--season" in sys.argv:
+        season()
     else:
         report(TEST_SEASONS)

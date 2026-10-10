@@ -273,6 +273,16 @@ def main():
         av.add(away, box["away"])
         pace.add(home, away, model.compact_totals(boxes[raw["gameCode"]]))
     model_json = ratings.to_json(teams)
+    # season forecast: play out the rest of the regular season (model.simulate_season)
+    rs = [g for g in raw_games if g["phaseType"]["code"] == "RS"]
+    forecast = model.simulate_season(
+        ratings, teams,
+        [(g["local"]["club"]["code"], g["road"]["club"]["code"], g["local"]["score"] - g["road"]["score"])
+         for g in rs if g["played"]],
+        [(g["local"]["club"]["code"], g["road"]["club"]["code"]) for g in rs if not g["played"]])
+    # team -> [chance of finishing 1-6, chance of finishing 7-10, expected final wins]
+    model_json["forecast"] = {t: [round(v[0], 3), round(v[1], 3), round(v[2], 1)] for t, v in forecast.items()}
+    model_json["forecastGames"] = len(rs) * 2 // len(teams) if teams else 0
     model_json["pace"] = {t: round(pace.team(t), 2) for t in teams}
     # teams that weren't in last season's EuroLeague: their starting rating is only a rough guess
     # Official regular-season order (EuroLeague tie-breakers: head-to-head and so on), which the site

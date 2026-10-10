@@ -127,6 +127,45 @@ function standingsTable(rows, compact = false) {
     <div class="legend"><span class="l-po">${L("Playoffs (1–6)", "Atkrintamosios (1–6)")}</span><span class="l-pi">Play-In (7–10)</span></div>`;
 }
 
+// ---------- Season forecast ----------
+// MODEL.forecast (model.simulate_season): team -> [P(finish 1-6), P(finish 7-10), expected final wins]
+function seasonForecast() {
+  const f = MODEL.forecast;
+  if (!f || !upcoming.some(g => !g.phase)) return "";
+  const now = Object.fromEntries(computeStandings().map(r => [r.id, r]));
+  const ids = Object.keys(f).sort((a, b) => f[b][2] - f[a][2]);
+  const pct = p => (p >= 0.995 ? ">99%" : p < 0.005 ? "<1%" : `${Math.round(100 * p)}%`);
+  const bar = (p, cls) => `<td class="fc"><span class="fc-bar ${cls}" style="width:${Math.round(100 * p)}%"></span><span class="fc-num">${pct(p)}</span></td>`;
+  return `<div class="card">
+    <h2>${L("Season forecast", "Sezono prognozė")}</h2>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>#</th><th class="left">${L("Team", "Komanda")}</th><th>${L("Now", "Dabar")}</th>
+        <th>${L("Expected wins", "Tikėtinos pergalės")}</th>
+        <th>${L("Playoffs (1–6)", "Atkrintamosios (1–6)")}</th><th>Play-In (7–10)</th><th>${L("Top 10", "Dešimtukas")}</th>
+      </tr></thead>
+      <tbody>${ids.map((id, i) => `<tr>
+        <td class="pos">${i + 1}</td><td class="left">${teamLink(id)}</td>
+        <td>${now[id].w}–${now[id].l}</td>
+        <td><b>${f[id][2].toFixed(1)}</b> <span class="muted">/ ${MODEL.forecastGames}</span></td>
+        ${bar(f[id][0], "po")}${bar(f[id][1], "pi")}
+        <td>${pct(f[id][0] + f[id][1])}</td></tr>`).join("")}
+      </tbody>
+    </table></div>
+    <p class="note">${L(
+      `The rest of the regular season played out 10,000 times with the prediction model: how often each team finishes
+       in the top 6 (straight to the playoffs) or 7th–10th (Play-In), and its average final number of wins. Tested on the
+       last three seasons, forecasts like these were reliable: teams given 50–70% for the top 6 made it 62% of the
+       time. Before round 5 the final win totals were still off by about 2.5 wins on average, so early in the season read
+       these as rough chances. Injuries and transfers during the season are not known to the model.`,
+      `Likusi reguliariojo sezono dalis sužaista 10 000 kartų su prognozių modeliu: kaip dažnai komanda užima 1–6 vietą
+       (tiesiai į atkrintamąsias) ar 7–10 vietą („Play-In“) ir kiek vidutiniškai laimi rungtynių. Patikrinta su trimis
+       praėjusiais sezonais: tokios prognozės pasitvirtino, pvz., komandos, kurioms duota 50–70 % patekti į šešetuką, pateko
+       62 % atvejų. Prieš 5 turą galutinis pergalių skaičius dar skyrėsi vidutiniškai apie 2,5 pergalės, todėl sezono
+       pradžioje tai tik apytikslės tikimybės. Traumų ir perėjimų sezono metu modelis nežino.`)}</p>
+  </div>`;
+}
+
 // ---------- Predictions ----------
 // Team ratings come from model.py (via update_data.py) — see the README for how they're made.
 function predict(homeId, awayId, neutral = false) {
@@ -273,7 +312,7 @@ const pages = {
   },
 
   standings() {
-    return `<h1>${L("Standings", "Turnyrinė lentelė")}</h1><div class="card">${standingsTable(computeStandings())}</div>`;
+    return `<h1>${L("Standings", "Turnyrinė lentelė")}</h1><div class="card">${standingsTable(computeStandings())}</div>${seasonForecast()}`;
   },
 
   stats([view]) {

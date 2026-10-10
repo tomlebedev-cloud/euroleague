@@ -141,6 +141,19 @@ The model has a real edge over a coin flip on winners and margins, but totals ar
 points vs 13.9 for the plain league average), and no test against real bookmaker odds has been done. Treat
 "value" as a signal to look closer, not a sure thing.
 
+### Season forecast
+
+The Standings page also shows each team's chance of finishing in the top 6 (playoffs) or 7th–10th (Play-In) and
+its expected final wins. `update_data.py` plays out the rest of the regular season 10,000 times
+(`model.simulate_season`): every game's margin is drawn around the model's prediction, and in each run every
+team's strength is also shifted by a random 2.5 points, because the ratings are uncertain themselves.
+
+`python backtest.py --season` forecasts the last three seasons before round 1 and after rounds 4, 10 and 20
+and compares with how they ended. Brier score for "finishes top 6": 0.139, against 0.218 for giving every
+team the same chance. Calibration is good in the middle (teams given 50–70% made it 62% of the time) and a
+little overconfident near the top (79% → 75%). Final wins were off by 2.5 on average early in the season and
+1.7 after round 20. Ties are ordered by point difference, not the official head-to-head rule.
+
 ### Ideas tested that did not help
 
 Checked the same way on 2023-24 to 2025-26 (log loss 0.6051 for the current model) and left out:
