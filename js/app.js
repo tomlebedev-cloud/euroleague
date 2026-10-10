@@ -11,7 +11,14 @@ const teamById = {};
 const players = [];
 TEAMS.forEach(team => {
   teamById[team.id] = team;
-  team.players.forEach(p => { p.team = team.id; players.push(p); });
+  team.players.forEach(p => {
+    p.team = team.id;
+    const [m2, a2, m3, a3, mf, af] = p.sh || [0, 0, 0, 0, 0, 0];
+    p.p2 = a2 ? 100 * m2 / a2 : null;
+    p.p3 = a3 ? 100 * m3 / a3 : null;
+    p.ft = af ? 100 * mf / af : null;
+    players.push(p);
+  });
 });
 const gameByCode = {};
 GAMES.forEach(g => { gameByCode[g.code] = g; });
@@ -58,6 +65,7 @@ const fmtDate = d => {
 };
 const fmtTime = d => d.slice(11, 16);
 const signed = n => (n > 0 ? "+" : "") + n;
+const signed1 = n => (n > 0 ? "+" : "") + Number(n).toFixed(1); // always one decimal
 const num = (n, key) => key === "gp" ? n : Number(n).toFixed(1);
 
 function badge(team, size = "") {
@@ -213,8 +221,14 @@ const pages = {
     return `<h1>${L("Standings", "Turnyrinė lentelė")}</h1><div class="card">${standingsTable(computeStandings())}</div>`;
   },
 
-  stats() {
-    return `<h1>${L("Player statistics", "Žaidėjų statistika")}</h1>
+  stats([view]) {
+    const tabs = `<div class="tabs">
+      <a href="#stats" class="${view === "teams" ? "" : "active"}">${L("Players", "Žaidėjai")}</a>
+      <a href="#stats/teams" class="${view === "teams" ? "active" : ""}">${L("Teams", "Komandos")}</a></div>`;
+    if (view === "teams") return `<h1>${L("Team statistics", "Komandų statistika")}</h1>${tabs}
+      <div class="card" id="teamStatsTable"></div>
+      <p class="note">${teamStatsNote()} ${L("Click a column header to sort.", "Paspauskite stulpelio pavadinimą, kad surikiuotumėte.")}</p>`;
+    return `<h1>${L("Player statistics", "Žaidėjų statistika")}</h1>${tabs}
       <div class="controls">
         <label>${L("Team", "Komanda")}
           <select id="teamFilter">
@@ -224,7 +238,14 @@ const pages = {
         </label>
         <span class="note">${L("Per-game averages. Click a column header to sort.", "Vidurkiai per rungtynes. Paspauskite stulpelio pavadinimą, kad surikiuotumėte.")}</span>
       </div>
-      <div class="card" id="statsTable"></div>`;
+      <div class="card" id="statsTable"></div>
+      <p class="note">${L(
+        `2P% / 3P% / FT% = two-point, three-point and free-throw accuracy; TO = turnovers; +/− = the team's point
+         difference while the player is on court. Grey percentages have too few attempts to be ranked (under 2
+         two-pointers, 1.5 threes or 1.5 free throws a game).`,
+        `2T% / 3T% / BM% = dvitaškių, tritaškių ir baudų metimų tikslumas; KL = klaidos; +/− = komandos taškų skirtumas,
+         kol žaidėjas aikštėje. Pilki procentai turi per mažai metimų, kad būtų rikiuojami (mažiau nei 2 dvitaškiai,
+         1,5 tritaškio ar 1,5 baudos metimo per rungtynes).`)}</p>`;
   },
 
   teams() {
@@ -249,6 +270,7 @@ const pages = {
       <h1 class="team-title">${badge(t, "lg")} ${esc(t.name)}</h1>
       <p class="muted">${t.fullName && t.fullName !== t.name ? `${esc(t.fullName)} · ` : ""}${esc(t.city)}, ${esc(t.country)}${t.coach ? ` · ${L("Coach", "Treneris")}: ${esc(t.coach)}` : ""}<br>
         ${L(`Position ${pos + 1}`, `${pos + 1} vieta`)} · ${r.w}–${r.l} · ${signed(r.diff)} ${L("point difference", "taškų skirtumas")}</p>
+      ${teamStatsCard(id)}
       <div class="card">
         <h2>${L("Players", "Žaidėjai")}</h2>
         ${playerTable(t.players, false)}
@@ -389,9 +411,75 @@ const STAT_COLS = () => [
   ["gp", L("GP", "R")], ["min", "MIN"], ["pts", L("PTS", "TŠK")], ["reb", L("REB", "AK")], ["ast", L("AST", "RP")],
   ["stl", L("STL", "PER")], ["blk", L("BLK", "BL")], ["pir", L("PIR", "NAUD")],
 ];
+// only in the full player tables (box scores keep the columns above)
+const EXTRA_COLS = () => [
+  ["p2", L("2P%", "2T%")], ["p3", L("3P%", "3T%")], ["ft", L("FT%", "BM%")], ["tov", L("TO", "KL")], ["pm", "+/−"],
+];
+// A shooting percentage only counts for ranking with enough attempts per game: [index of attempts in p.sh, minimum]
+const MIN_ATTEMPTS = { p2: [1, 2], p3: [3, 1.5], ft: [5, 1.5] };
+const qualifies = (p, key) => !MIN_ATTEMPTS[key] || (p.sh && p.sh[MIN_ATTEMPTS[key][0]] >= MIN_ATTEMPTS[key][1] * p.gp);
+// value used for sorting: players without enough attempts go to the bottom of a percentage column
+const sortValue = (p, key) => (p[key] == null || !qualifies(p, key) ? -Infinity : p[key]);
+const statCell = (p, key) => {
+  if (!p.gp && key !== "gp") return "–";
+  if (p[key] == null) return "–";
+  if (key === "pm") return signed1(p.pm);
+  return MIN_ATTEMPTS[key] && !qualifies(p, key) ? `<span class="muted">${num(p[key], key)}</span>` : num(p[key], key);
+};
+
+// ---------- Team statistics ----------
+// [key, label, lower is better]
+const TEAM_COLS = () => [
+  ["pts", L("PTS", "TŠK")], ["opp", L("OPP", "PRAL"), true], ["ortg", L("OFF", "PUOL")], ["drtg", L("DEF", "GYN"), true],
+  ["net", L("NET", "SKIRT")], ["pace", L("PACE", "TEMPAS")], ["efg", "eFG%"], ["oefg", L("OPP eFG%", "VARŽ eFG%"), true],
+  ["p2", L("2P%", "2T%")], ["p3", L("3P%", "3T%")], ["ft", L("FT%", "BM%")], ["reb", L("REB", "AK")],
+  ["orebp", L("OREB%", "PUOL AK%")], ["ast", L("AST", "RP")], ["tov", L("TO", "KL"), true],
+  ["stl", L("STL", "PER")], ["blk", L("BLK", "BL")],
+];
+const teamStats = () => (typeof TEAM_STATS !== "undefined" ? TEAM_STATS : {});
+// 1 = best in the league for that column
+function teamRank(id, key, lowerBetter) {
+  const ts = teamStats(), mine = ts[id][key];
+  return 1 + Object.values(ts).filter(t => (lowerBetter ? t[key] < mine : t[key] > mine)).length;
+}
+
+function teamStatsTable(sortKey) {
+  const ts = teamStats(), cols = TEAM_COLS();
+  const lower = (cols.find(c => c[0] === sortKey) || [])[2];
+  const ids = Object.keys(ts).sort((a, b) => (lower ? ts[a][sortKey] - ts[b][sortKey] : ts[b][sortKey] - ts[a][sortKey]));
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>#</th><th class="left">${L("Team", "Komanda")}</th>
+      ${cols.map(([k, label]) => `<th class="sortable ${k === sortKey ? "sorted" : ""}" data-sort="${k}">${label}</th>`).join("")}
+    </tr></thead>
+    <tbody>${ids.map((id, i) => `<tr><td class="pos">${i + 1}</td><td class="left">${teamLink(id)}</td>
+      ${cols.map(([k]) => `<td>${k === "net" ? signed1(ts[id][k]) : ts[id][k].toFixed(1)}</td>`).join("")}</tr>`).join("")}
+    </tbody></table></div>`;
+}
+
+const teamStatsNote = () => L(
+  `Per game. OFF / DEF = points scored / allowed per 100 possessions, NET = their difference, PACE = possessions per game,
+   eFG% = shooting percentage counting a three as 1.5 makes, OREB% = share of own misses rebounded.`,
+  `Per rungtynes. PUOL / GYN = pelnyti / praleisti taškai per 100 atakų, SKIRT = jų skirtumas, TEMPAS = atakos per rungtynes,
+   eFG% = metimų tikslumas, kai tritaškis skaičiuojamas kaip 1,5 pataikymo, PUOL AK% = atkovota savo netaiklių metimų dalis.`);
+
+// the main numbers of one team with its league rank, for the team page
+function teamStatsCard(id) {
+  const ts = teamStats();
+  if (!ts[id]) return "";
+  const keys = ["pts", "opp", "ortg", "drtg", "net", "pace", "efg", "p3", "reb", "ast", "tov"];
+  const cols = TEAM_COLS().filter(c => keys.includes(c[0]));
+  return `<div class="card">
+    <h2>${L("Team statistics", "Komandos statistika")}</h2>
+    <div class="stat-tiles">${cols.map(([k, label, lower]) => `<div class="stat-tile">
+      <small>${label}</small><b>${k === "net" ? signed1(ts[id][k]) : ts[id][k].toFixed(1)}</b>
+      <span class="muted">${L(`#${teamRank(id, k, lower)}`, `${teamRank(id, k, lower)} vieta`)}</span></div>`).join("")}
+    </div>
+    <p class="note">${teamStatsNote()} <a href="#stats/teams">${L("All teams →", "Visos komandos →")}</a></p>
+  </div>`;
+}
 
 function playerTable(list, showTeam, compact = false, sortKey = null) {
-  const cols = compact ? STAT_COLS().filter(([k]) => ["gp", "pts", "reb", "ast", "pir"].includes(k)) : STAT_COLS();
+  const cols = compact ? STAT_COLS().filter(([k]) => ["gp", "pts", "reb", "ast", "pir"].includes(k)) : [...STAT_COLS(), ...EXTRA_COLS()];
   return `<div class="table-wrap"><table>
     <thead><tr>
       ${showTeam ? "" : "<th>#</th>"}<th class="left">${L("Player", "Žaidėjas")}</th>${compact ? "" : `<th class='left'>${L("Pos", "Poz.")}</th>`}
@@ -404,7 +492,7 @@ function playerTable(list, showTeam, compact = false, sortKey = null) {
         <td class="left">${esc(p.name)} <span class="muted">${esc(p.nat)}</span></td>
         ${compact ? "" : `<td class="left muted">${esc(p.pos)}</td>`}
         ${showTeam ? `<td class="left">${teamLink(p.team)}</td>` : ""}
-        ${cols.map(([k]) => `<td>${p.gp || k === "gp" ? num(p[k], k) : "–"}</td>`).join("")}
+        ${cols.map(([k]) => `<td>${statCell(p, k)}</td>`).join("")}
       </tr>`).join("")}
     </tbody>
   </table></div>`;
@@ -446,12 +534,25 @@ function leaderList(key, label) {
 
 // ---------- Interactivity per page ----------
 const setup = {
-  stats() {
+  stats([view]) {
+    if (view === "teams") {
+      let key = "net";
+      const tbox = document.getElementById("teamStatsTable");
+      const draw = () => {
+        tbox.innerHTML = Object.keys(teamStats()).length ? teamStatsTable(key)
+          : `<p class='muted'>${L("No games played yet.", "Rungtynių dar nebuvo.")}</p>`;
+        tbox.querySelectorAll("th.sortable").forEach(th =>
+          th.addEventListener("click", () => { key = th.dataset.sort; draw(); }));
+      };
+      draw();
+      return;
+    }
     let sortKey = "pts";
     const sel = document.getElementById("teamFilter");
     const box = document.getElementById("statsTable");
     const render = () => {
-      const list = players.filter(p => p.gp && (!sel.value || p.team === sel.value)).sort((a, b) => b[sortKey] - a[sortKey]);
+      const list = players.filter(p => p.gp && (!sel.value || p.team === sel.value))
+        .sort((a, b) => sortValue(b, sortKey) - sortValue(a, sortKey) || b.pts - a.pts);
       box.innerHTML = list.length ? playerTable(list, true, false, sortKey) : `<p class='muted'>${L("No games played yet.", "Rungtynių dar nebuvo.")}</p>`;
       box.querySelectorAll("th.sortable").forEach(th =>
         th.addEventListener("click", () => { sortKey = th.dataset.sort; render(); }));

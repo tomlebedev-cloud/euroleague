@@ -111,6 +111,14 @@ tr:last-child td { border-bottom: none; }
 .round-title { font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 4px 0; }
 
 /* ---------- Controls ---------- */
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+.tabs a { text-decoration: none; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); }
+.tabs a.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.stat-tile { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; }
+.stat-tile small { color: var(--muted); font-size: .72rem; text-transform: uppercase; }
+.stat-tile b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.stat-tile span { font-size: .78rem; }
 .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
 select, button { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
 button { cursor: pointer; }

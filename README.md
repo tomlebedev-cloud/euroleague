@@ -10,8 +10,8 @@ Plain HTML, CSS and JavaScript, plus one small Python script that downloads the 
 |------|---------------|
 | **Home** | Latest results, next games (with predicted scores), standings, stat leaders |
 | **Standings** | Full table: games, wins, losses, points for/against, +/-, last 5 games |
-| **Stats** | Every player's per-game averages. Filter by team, click a column to sort |
-| **Teams** | All 20 teams. Click one to see coach, roster with season averages, and all 38 games |
+| **Stats** | Players: per-game averages, shooting percentages (2P%, 3P%, FT%), turnovers and +/−. Teams: points per 100 possessions scored and allowed, pace, eFG%, rebounds and more. Click a column to sort |
+| **Teams** | All 20 teams. Click one to see coach, team statistics with league rank, roster with season averages, and all 38 games |
 | **Schedule** | Go round by round through all 38 rounds, filter by team |
 | **Game** | Played: quarter scores and full box score for both teams. Upcoming: prediction, earlier meetings, both rosters |
 | **Predictions** | Win probability and predicted score for the next two rounds, plus a "pick any two teams" tool |

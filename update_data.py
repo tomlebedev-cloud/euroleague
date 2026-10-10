@@ -66,6 +66,12 @@ def nice_name(api_name):
     return re.sub(r"(?<![A-Za-z])Mc([a-z])", lambda m: "Mc" + m.group(1).upper(), " ".join(fixed))
 
 
+# extra per-player numbers taken from the box scores: our name -> API name
+PLAYER_EXTRA = {"m2": "fieldGoalsMade2", "a2": "fieldGoalsAttempted2", "m3": "fieldGoalsMade3",
+                "a3": "fieldGoalsAttempted3", "mf": "freeThrowsMade", "af": "freeThrowsAttempted",
+                "tov": "turnovers", "pm": "plusMinus"}
+
+
 def new_results():
     """True if the API has a finished game (or a changed score) that js/data.js doesn't have yet."""
     m = re.search(r"^const GAMES = (.*);$", OUT.read_text(encoding="utf-8"), re.M) if OUT.exists() else None
@@ -135,6 +141,7 @@ def main():
         boxes = dict(pool.map(box, played))
 
     totals = defaultdict(lambda: defaultdict(float))  # (team, player) -> summed stats
+    team_totals = defaultdict(lambda: defaultdict(float))  # team -> summed team stats
     games = []
     for g in raw_games:
         home, away = g["local"]["club"]["code"], g["road"]["club"]["code"]
@@ -178,6 +185,8 @@ def main():
                         t["gp"] += 1
                         for k in ("min", "pts", "reb", "ast", "stl", "blk", "pir"):
                             t[k] += line[k]
+                        for k, api_key in PLAYER_EXTRA.items():
+                            t[k] += s.get(api_key) or 0
                         # players who left the club still show up with their stats
                         teams[team]["players"].setdefault(person["code"], {
                             "code": person["code"], "name": line["name"], "num": line["num"],
@@ -185,6 +194,20 @@ def main():
                             "nat": (person.get("country") or {}).get("code", ""),
                         })
                 game["box"]["home" if side == "local" else "away"] = lines
+            # team totals, own and opponent's, for the team statistics page
+            ct = model.compact_totals(boxes[g["gameCode"]])
+            poss = (model.possessions(ct["home"]) + model.possessions(ct["away"])) / 2
+            for side, api_side, team, other in (("home", "local", home, "away"), ("away", "road", away, "home")):
+                tt = team_totals[team]
+                tt["gp"] += 1
+                tt["poss"] += poss
+                for i, v in enumerate(ct[side]):
+                    tt[f"own{i}"] += v
+                for i, v in enumerate(ct[other]):
+                    tt[f"opp{i}"] += v
+                tot = boxes[g["gameCode"]][api_side]["total"]
+                for k, api_key in (("ast", "assistances"), ("stl", "steals"), ("blk", "blocksFavour")):
+                    tt[k] += tot.get(api_key) or 0
         games.append(game)
 
     # ---- Per-game averages ----
@@ -193,9 +216,33 @@ def main():
             t = totals.get((team["id"], code))
             gp = int(t["gp"]) if t else 0
             pl["gp"] = gp
-            for k in ("min", "pts", "reb", "ast", "stl", "blk", "pir"):
+            for k in ("min", "pts", "reb", "ast", "stl", "blk", "pir", "tov", "pm"):
                 pl[k] = round(t[k] / gp, 1) if gp else 0
+            # shooting totals [2PM, 2PA, 3PM, 3PA, FTM, FTA]; the site turns them into percentages
+            pl["sh"] = [int(t[k]) for k in ("m2", "a2", "m3", "a3", "mf", "af")] if gp else [0] * 6
         team["players"] = sorted(team["players"].values(), key=lambda p: (-p["gp"], -p["pts"], p["name"]))
+
+    # ---- Team statistics ----
+    # index into model.TOTAL_KEYS: 0 2PM, 1 2PA, 2 3PM, 3 3PA, 4 FTM, 5 FTA, 6 OREB, 7 DREB, 8 TOV, 9 PTS
+    def pct(made, att):
+        return round(100 * made / att, 1) if att else 0
+
+    team_stats = {}
+    for code, tt in team_totals.items():
+        n, poss = tt["gp"], tt["poss"]
+        o = [tt[f"own{i}"] for i in range(10)]
+        p = [tt[f"opp{i}"] for i in range(10)]
+        team_stats[code] = {
+            "gp": int(n),
+            "pts": round(o[9] / n, 1), "opp": round(p[9] / n, 1),
+            "ortg": round(100 * o[9] / poss, 1), "drtg": round(100 * p[9] / poss, 1),
+            "net": round(100 * (o[9] - p[9]) / poss, 1), "pace": round(poss / n, 1),
+            "p2": pct(o[0], o[1]), "p3": pct(o[2], o[3]), "ft": pct(o[4], o[5]),
+            "efg": pct(o[0] + 1.5 * o[2], o[1] + o[3]), "oefg": pct(p[0] + 1.5 * p[2], p[1] + p[3]),
+            "reb": round((o[6] + o[7]) / n, 1), "orebp": pct(o[6], o[6] + p[7]),
+            "ast": round(tt["ast"] / n, 1), "tov": round(o[8] / n, 1),
+            "stl": round(tt["stl"] / n, 1), "blk": round(tt["blk"] / n, 1),
+        }
 
     # ---- Prediction model (see model.py) ----
     print("  fitting prediction model...")
@@ -264,6 +311,7 @@ def main():
         f"const MODEL = {json.dumps(model_json)};\n"
         f"const NEW_TEAMS = {json.dumps(new_teams)};\n"
         f"const OFFICIAL = {json.dumps(official)};\n"
+        f"const TEAM_STATS = {json.dumps(team_stats, separators=(',', ':'))};\n"
         f"const AVAILABILITY = {json.dumps(availability, separators=(',', ':'))};\n"
     )
     OUT.write_text(js, encoding="utf-8")
