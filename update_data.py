@@ -179,7 +179,9 @@ def main():
                         "pts": s["points"], "reb": s["totalRebounds"], "ast": s["assistances"],
                         "stl": s["steals"], "blk": s["blocksFavour"], "pir": s["valuation"],
                     }
-                    lines.append([line[k] for k in ("name", "num", "min", "pts", "reb", "ast", "stl", "blk", "pir")])
+                    # the player's code comes last: it links the line to his page on the site
+                    lines.append([line[k] for k in ("name", "num", "min", "pts", "reb", "ast", "stl", "blk", "pir")]
+                                 + [person["code"]])
                     if secs > 0:
                         t = totals[(team, person["code"])]
                         t["gp"] += 1

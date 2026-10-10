@@ -352,6 +352,10 @@ const pages = {
       </div>`;
   },
 
+  player([code]) {
+    return playerPage(code);
+  },
+
   team([id]) {
     const t = teamById[id];
     if (!t) return notFound();
@@ -497,6 +501,79 @@ const pages = {
   },
 };
 
+const playerLink = (code, name) => (code ? `<a class="plain" href="#player/${esc(code)}">${esc(name)}</a>` : esc(name));
+
+// every game a player was listed for: [{game, line, home?}], oldest first
+function playerGames(code) {
+  const out = [];
+  played.forEach(g => {
+    for (const side of ["home", "away"]) {
+      const line = g.box && g.box[side].find(l => l[9] === code);
+      if (line) out.push({ g, line, home: side === "home" });
+    }
+  });
+  return out;
+}
+
+function playerPage(code) {
+  const entries = players.filter(p => p.code === code); // more than one if he changed clubs this season
+  if (!entries.length) return notFound();
+  const p = entries.find(e => e.gp) || entries[0];
+  const t = teamById[p.team];
+  const log = playerGames(code);
+  const fmtMin = m => `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, "0")}`;
+  const pctTile = (label, key, mi, ai) => `<div class="stat-tile"><small>${label}</small>
+    <b>${p[key] == null ? "–" : p[key].toFixed(1)}</b><span class="muted">${p.sh[mi]}/${p.sh[ai]}</span></div>`;
+  const tile = (label, key) => `<div class="stat-tile"><small>${label}</small>
+    <b>${key === "pm" ? signed1(p.pm) : num(p[key], key)}</b><span class="muted">${rankOf(p, key)}</span></div>`;
+  const best = log.filter(e => e.line[2]).sort((a, b) => b.line[8] - a.line[8])[0];
+  return `
+    <p><a href="#team/${t.id}">← ${esc(t.name)}</a></p>
+    <h1 class="team-title">${badge(t, "lg")} ${esc(p.name)}</h1>
+    <p class="muted">${p.num ? `#${esc(p.num)} · ` : ""}${esc(p.pos)}${p.pos ? " · " : ""}${esc(p.nat)} · ${teamLink(t.id, "sm").replace('class="team-cell"', 'class="team-cell inline"')}
+      ${entries.length > 1 ? ` · ${L("also played for", "taip pat žaidė už")} ${entries.filter(e => e !== p).map(e => esc(teamById[e.team].name)).join(", ")}` : ""}</p>
+    ${p.gp ? `<div class="card">
+      <h2>${L("Season averages", "Sezono vidurkiai")} <span class="muted">· ${p.gp} ${L("games", "rungt.")}</span></h2>
+      <div class="stat-tiles">
+        ${tile("MIN", "min")}${tile(L("PTS", "TŠK"), "pts")}${tile(L("REB", "AK"), "reb")}${tile(L("AST", "RP"), "ast")}
+        ${tile(L("STL", "PER"), "stl")}${tile(L("BLK", "BL"), "blk")}${tile(L("TO", "KL"), "tov")}${tile(L("PIR", "NAUD"), "pir")}${tile("+/−", "pm")}
+        ${pctTile(L("2P%", "2T%"), "p2", 0, 1)}${pctTile(L("3P%", "3T%"), "p3", 2, 3)}${pctTile(L("FT%", "BM%"), "ft", 4, 5)}
+      </div>
+      <p class="note">${L(
+        `Under each number: rank among the ${rankPool().length} players with at least ${minGames()} games (for shooting: makes/attempts).`,
+        `Po kiekvienu skaičiumi: vieta tarp ${rankPool().length} žaidėjų, sužaidusių bent ${minGames()} rungt. (metimams: pataikyta/mesta).`)}
+        ${best ? L(`Best game by PIR: <a href="#game/${best.g.code}">${best.line[8]} against ${esc(teamById[best.home ? best.g.away : best.g.home].name)}</a>.`,
+                   `Geriausios rungtynės pagal naudingumą: <a href="#game/${best.g.code}">${best.line[8]} prieš ${esc(teamById[best.home ? best.g.away : best.g.home].name)}</a>.`) : ""}</p>
+    </div>` : `<div class="card"><p class="muted">${L("Has not played this season.", "Šį sezoną dar nežaidė.")}</p></div>`}
+    ${log.length ? `<div class="card">
+      <h2>${L("Game log", "Rungtynės")}</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="left">${L("Date", "Data")}</th><th class="left">${L("Opponent", "Varžovas")}</th><th>${L("Result", "Rezultatas")}</th>
+          ${STAT_COLS().slice(1).map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
+        <tbody>${[...log].reverse().map(({ g, line, home }) => {
+          const us = home ? g.score[0] : g.score[1], them = home ? g.score[1] : g.score[0];
+          return `<tr class="${line[2] ? "" : "dnp"}">
+            <td class="left"><a class="plain" href="#game/${g.code}">${fmtDate(g.date)}</a></td>
+            <td class="left"><span class="muted">${home ? L("vs", "prieš") : "@"}</span> ${esc(teamById[home ? g.away : g.home].name)}</td>
+            <td><span class="${us > them ? "plus" : "minus"}">${us > them ? L("W", "P") : L("L", "Pr")}</span> ${us}–${them}</td>
+            ${line[2] ? `<td>${fmtMin(line[2])}</td>${line.slice(3, 9).map(v => `<td>${v}</td>`).join("")}`
+                      : `<td>DNP</td>${"<td></td>".repeat(6)}`}
+          </tr>`;
+        }).join("")}</tbody>
+      </table></div>
+    </div>` : ""}`;
+}
+
+// players with enough games to be ranked, and a player's rank in one stat ("" if he isn't in that pool)
+const rankPool = () => players.filter(q => q.gp && q.gp >= minGames());
+function rankOf(p, key) {
+  const pool = rankPool();
+  if (!pool.includes(p)) return "";
+  const lowerBetter = key === "tov";
+  const rank = 1 + pool.filter(q => (lowerBetter ? q[key] < p[key] : q[key] > p[key])).length;
+  return L(`#${rank}`, `${rank} vieta`);
+}
+
 function notFound() {
   return `<h1>${L("Not found", "Puslapis nerastas")}</h1><p><a href="#home">${L("Back to home", "Į pradžią")}</a></p>`;
 }
@@ -584,7 +661,7 @@ function playerTable(list, showTeam, compact = false, sortKey = null) {
     <tbody>
       ${list.map(p => `<tr>
         ${showTeam ? "" : `<td class="muted">${esc(p.num)}</td>`}
-        <td class="left">${esc(p.name)} <span class="muted">${esc(p.nat)}</span></td>
+        <td class="left">${playerLink(p.code, p.name)} <span class="muted">${esc(p.nat)}</span></td>
         ${compact ? "" : `<td class="left muted">${esc(p.pos)}</td>`}
         ${showTeam ? `<td class="left">${teamLink(p.team)}</td>` : ""}
         ${cols.map(([k]) => `<td>${statCell(p, k)}</td>`).join("")}
@@ -600,8 +677,8 @@ function boxTable(lines) {
   return `<div class="table-wrap"><table>
     <thead><tr><th>#</th><th class="left">${L("Player", "Žaidėjas")}</th>${STAT_COLS().slice(1).map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
     <tbody>${sorted.map(l => `<tr class="${l[2] ? "" : "dnp"}">
-      <td class="muted">${esc(l[1])}</td><td class="left">${esc(l[0])}</td><td>${fmtMin(l[2])}</td>
-      ${l.slice(3).map(v => `<td>${l[2] ? v : ""}</td>`).join("")}
+      <td class="muted">${esc(l[1])}</td><td class="left">${playerLink(l[9], l[0])}</td><td>${fmtMin(l[2])}</td>
+      ${l.slice(3, 9).map(v => `<td>${l[2] ? v : ""}</td>`).join("")}
     </tr>`).join("")}</tbody>
   </table></div>`;
 }
@@ -622,7 +699,7 @@ function leaderList(key, label) {
   const top = players.filter(p => p.gp && p.gp >= min).sort((a, b) => b[key] - a[key]).slice(0, 3);
   return `<div style="margin-bottom:10px"><div class="round-title">${label}</div>
     ${top.map((p, i) => `<div class="leader">
-      <span>${i + 1}. ${esc(p.name)} <span class="muted">${esc(teamById[p.team].short)}</span></span><b>${num(p[key])}</b></div>`).join("")
+      <span>${i + 1}. ${playerLink(p.code, p.name)} <span class="muted">${esc(teamById[p.team].short)}</span></span><b>${num(p[key])}</b></div>`).join("")
       || `<span class='muted'>${L("No games yet.", "Rungtynių dar nebuvo.")}</span>`}
   </div>`;
 }
@@ -699,7 +776,7 @@ function route() {
   const view = pages[page];
   $app.innerHTML = view ? view(params) : notFound();
   if (view && setup[page]) setup[page](params);
-  const navKey = { team: "teams", game: "schedule" }[page] || page;
+  const navKey = { team: "teams", player: "teams", game: "schedule" }[page] || page;
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.dataset.nav === navKey));
   window.scrollTo(0, 0);
 }

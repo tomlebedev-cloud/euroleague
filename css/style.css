@@ -116,6 +116,9 @@ td.fc { position: relative; min-width: 96px; }
 .fc-bar.po { background: var(--win); }
 .fc-bar.pi { background: var(--accent); }
 .fc-num { position: relative; }
+a.plain { text-decoration: none; }
+a.plain:hover { text-decoration: underline; }
+.team-cell.inline { display: inline-flex; vertical-align: middle; }
 tr.total td { border-top: 2px solid var(--border); font-weight: 600; }
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
 .tabs a { text-decoration: none; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); }
