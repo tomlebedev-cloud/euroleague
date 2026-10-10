@@ -3,6 +3,7 @@ Download real Euroleague data from the official API and write js/data.js.
 
     python update_data.py            # current season (2026-27)
     python update_data.py E2025      # another season, e.g. 2025-26
+    python update_data.py --if-new   # quick check: only update when a game has finished since last time
 
 Only uses the Python standard library. Re-run whenever you want fresh
 results, standings, rosters and stats.
@@ -21,7 +22,7 @@ from pathlib import Path
 
 import model
 
-SEASON_CODE = sys.argv[1] if len(sys.argv) > 1 else "E2026"
+SEASON_CODE = next((a for a in sys.argv[1:] if not a.startswith("-")), "E2026")
 API = f"https://api-live.euroleague.net/v2/competitions/E/seasons/{SEASON_CODE}"
 OUT = Path(__file__).parent / "js" / "data.js"
 # Box scores of finished games never change, so they are saved here and not downloaded again.
@@ -65,8 +66,21 @@ def nice_name(api_name):
     return re.sub(r"(?<![A-Za-z])Mc([a-z])", lambda m: "Mc" + m.group(1).upper(), " ".join(fixed))
 
 
+def new_results():
+    """True if the API has a finished game (or a changed score) that js/data.js doesn't have yet."""
+    m = re.search(r"^const GAMES = (.*);$", OUT.read_text(encoding="utf-8"), re.M) if OUT.exists() else None
+    if not m:
+        return True
+    have = {g["code"]: g["score"] for g in json.loads(m.group(1)) if g["score"]}
+    now = {g["gameCode"]: [g["local"]["score"], g["road"]["score"]] for g in get("/games")["data"] if g["played"]}
+    return have != now
+
+
 def main():
     print(f"Season {SEASON_CODE}")
+    if "--if-new" in sys.argv and not new_results():
+        print("  no newly finished games, nothing to do")
+        return
 
     # ---- Clubs ----
     clubs = get("/clubs")["data"]

@@ -46,9 +46,16 @@ Requires Python 3 (standard library only, nothing to install).
 
 ### Automatic daily update
 
-On GitHub, the workflow in `.github/workflows/update-data.yml` runs `update_data.py` every day at
-05:00 UTC and commits the new `js/data.js` when results changed. The website (GitHub Pages) then
-redeploys by itself. To update right away: **Actions → Update EuroLeague data → Run workflow**.
+On GitHub, the workflow in `.github/workflows/update-data.yml` keeps `js/data.js` current and the website
+(GitHub Pages) redeploys by itself after every change:
+
+- **After games:** every half hour in the evening and hourly through the night (UTC) it runs
+  `update_data.py --if-new`, which asks the API once whether a game has finished since the last update and
+  only then does the full update.
+- **Every morning** (05:23 UTC) it runs a full update, which also picks up roster and schedule changes.
+
+GitHub starts scheduled jobs late when it is busy (sometimes by hours), so results can take a while to
+appear. To update right away: **Actions → Update EuroLeague data → Run workflow**.
 
 Live site: https://tomlebedev-cloud.github.io/euroleague/
 

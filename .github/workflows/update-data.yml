@@ -2,7 +2,12 @@ name: Update EuroLeague data
 
 on:
   schedule:
-    - cron: "0 5 * * *" # every day at 05:00 UTC, after the previous evening's games
+    # Quick checks around game time: every half hour in the evening and hourly through the night (UTC).
+    # They only do a full update when a game has finished since the last one (update_data.py --if-new).
+    - cron: "13,43 16-23 * * *"
+    - cron: "13 0-4 * * *"
+    # Full update every morning (rosters, schedule changes), whether or not games were played.
+    - cron: "23 5 * * *"
   workflow_dispatch: # allows running it manually from the Actions tab
 
 permissions:
@@ -31,7 +36,12 @@ jobs:
           restore-keys: euroleague-cache-
 
       - name: Download data
-        run: python -u update_data.py
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" != "23 5 * * *" ]; then
+            python -u update_data.py --if-new
+          else
+            python -u update_data.py
+          fi
 
       - name: Commit if anything changed
         run: |
