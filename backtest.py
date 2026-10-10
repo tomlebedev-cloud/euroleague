@@ -186,15 +186,20 @@ def season_predictions(season):
     return _PRED[season]
 
 
-def absence_rows(season, k=None):
-    """-> [(game, home pts, away pts, home key players out, away key players out)]. Uses who actually
-    played, like knowing the line-ups before tip-off."""
+def absence_rows(season, k=None, known="actual"):
+    """-> [(game, home pts, away pts, home key players out, away key players out)].
+    known="actual":   who really played, like knowing the line-ups before tip-off
+    known="previous": who played the team's previous game, all the site knows without injury news"""
     boxes = model.history_boxes(season)
     av = model.Availability(model.history_player_totals(model.previous(season)))
     out = {}
     for g in SEASONS[season]:
         box = boxes[g["code"]]
-        playing = {side: {c for c, secs, _ in box[side] if secs > 0} for side in ("home", "away")}
+        if known == "actual":
+            playing = {side: {c for c, secs, _ in box[side] if secs > 0} for side in ("home", "away")}
+        else:  # a team's first game: nobody is assumed out
+            playing = {side: av.last_played.get(g[side], set(av.key_players(g[side], k)))
+                       for side in ("home", "away")}
         out[g["code"]] = (av.key_players_out(g["home"], playing["home"], k),
                           av.key_players_out(g["away"], playing["away"], k))
         av.add(g["home"], box["home"])
@@ -242,6 +247,13 @@ def absences():
         print(f"  {' | '.join(line)}")
         print(f"  all: winner right {before['accuracy']:.1%} -> {after['accuracy']:.1%}, "
               f"margin error {before['margin_error']:.2f} -> {after['margin_error']:.2f}")
+    # the same effect applied with only "who missed the previous game" known
+    per = model.ABSENCE["perPlayer"]
+    for known in ("actual", "previous"):
+        rows = [r for s in TEST_SEASONS for r in absence_rows(s, None, known)]
+        before, after = absence_metrics(rows, 0), absence_metrics(rows, per)
+        print(f"line-ups known from {known} game: measured effect {fit_absence(rows):.2f} points; with {per} "
+              f"log loss {before['log_loss']:.4f} -> {after['log_loss']:.4f}")
     print(f"currently in model.ABSENCE: {model.ABSENCE}")
 
 

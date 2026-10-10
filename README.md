@@ -116,8 +116,9 @@ or keeps a backup.
 
 **Line-ups.** Each team's three most productive regulars (PIR per game, early in the season leaning on
 last season) are its key players. Every key player who doesn't play costs his team 1.5 points of margin.
-Players who missed the team's latest game are marked out automatically; tick or untick players from the
-injury news. Measured with `python backtest.py --absences` on 2023-24 to 2025-26 box scores (downloaded once
+Players who left the club are counted out; everyone else you tick yourself from the injury news. Players
+who missed the team's latest game only get a "missed last game" hint: assuming they stay out made the
+predictions worse on past seasons (log loss 0.6051 → 0.6064), because players often return. Measured with `python backtest.py --absences` on 2023-24 to 2025-26 box scores (downloaded once
 into `.cache/history/`), each season predicted with the effect measured on the other two: the effect was 1.3–1.8
 points in every season, but the overall gain is small (winners right 66.6% → 66.8%), and that is with the
 real line-ups known. Summing every missing player's PIR worked worse than counting key players.

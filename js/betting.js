@@ -43,7 +43,9 @@ const regulars = id => (typeof AVAILABILITY !== "undefined" && AVAILABILITY[id])
 
 function isOut(g, p) {
   if (p[3]) return true; // left the club
-  return lineups[g.code]?.[p[0]] ?? p[2]; // your choice, else: out if he missed the latest game
+  // Only your own ticks count. "Missed the latest game" (p[2]) is shown as a hint but not applied:
+  // on past seasons assuming those players stay out made predictions worse (backtest.py --absences).
+  return lineups[g.code]?.[p[0]] ?? false;
 }
 const keyOut = (g, team) => regulars(team).slice(0, ABS.keyPlayers).filter(p => isOut(g, p));
 
@@ -452,10 +454,12 @@ function modelBox(g) {
       </div>
       <p class="note">${L(`Regulars by PIR per game. ★ = key player: each one who misses the game costs his team
         about ${ABS.perPlayer} points (measured on the last three seasons); other players don't move the prediction.
-        Players who missed the team's latest game are ticked automatically: check the injury news and correct it.`,
+        Players who left the club are counted out. "Missed last game" is only a hint, because players often
+        return: check the injury news and tick those who really won't play.`,
         `Nuolatiniai žaidėjai pagal PIR per rungtynes. ★ = pagrindinis žaidėjas: kiekvienas nežaidžiantis atima iš komandos
         maždaug ${ABS.perPlayer} taško (išmatuota per tris praėjusius sezonus); kiti žaidėjai prognozės nekeičia.
-        Praleidę paskutines komandos rungtynes pažymimi automatiškai: patikrinkite traumų naujienas ir pataisykite.`)}
+        Išėję iš klubo laikomi nežaidžiančiais. „Praleido paskutines“ yra tik užuomina, nes žaidėjai dažnai
+        grįžta: patikrinkite traumų naujienas ir pažymėkite tuos, kurie tikrai nežais.`)}
         <button class="link" data-reset="${g.code}">${L("Reset", "Atstatyti")}</button></p>
     </details>
     <details class="lines" data-details="chances"><summary>${L("Model chances at other lines", "Modelio tikimybės prie kitų linijų")}</summary>
@@ -587,7 +591,7 @@ pages.bets = params => {
       <h2>${L("Read this before betting", "Perskaitykite prieš statydami")}</h2>
       ${L(`<p>The model picks about 67% of winners, but bookmakers' prices are usually at least as good, and their
         margin (typically 5–8%) has to be beaten first. "Value" here means the model disagrees with the bookmaker;
-        it is not a guarantee. The model only knows who missed each team's latest game: tick injured key players
+        it is not a guarantee. The model does not know who is injured: tick injured key players
         yourself from the news before betting. On past seasons, knowing the line-ups improved the model only a
         little (winners 66.6% → 66.8%): bookmakers react to injury news fast, so the edge is in being quicker.
         Over a few rounds results are mostly luck; keep the log below to see whether it works over 100+ bets.</p>
@@ -596,7 +600,7 @@ pages.bets = params => {
       <p>Bet only money you can afford to lose. Help in Lithuania: Lošimų priežiūros tarnyba, tel. 8 800 222 99 (free).</p>`,
       `<p>Modelis atspėja maždaug 67 % nugalėtojų, bet lažybų bendrovių kainos dažniausiai bent tokios pat geros, o jų
         maržą (paprastai 5–8 %) pirmiausia reikia įveikti. „Vertė“ čia reiškia, kad modelis nesutinka su lažybų bendrove;
-        tai ne garantija. Modelis žino tik, kas praleido paskutines komandos rungtynes: traumuotus pagrindinius žaidėjus
+        tai ne garantija. Modelis nežino, kas traumuotas: traumuotus pagrindinius žaidėjus
         pažymėkite patys pagal naujienas. Praėjusiuose sezonuose žinomos sudėtys modelį pagerino tik šiek tiek
         (nugalėtojai 66,6 % → 66,8 %): lažybų bendrovės į traumų naujienas reaguoja greitai, todėl pranašumas yra greitume.
         Per kelis turus rezultatus daugiausia lemia sėkmė; veskite žurnalą ir vertinkite po 100+ statymų.</p>
