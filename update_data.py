@@ -150,6 +150,8 @@ def main():
         }
         if g["phaseType"]["code"] == "FF" or g.get("isNeutralVenue"):
             game["neutral"] = True
+        if g["phaseType"]["code"] != "RS":
+            game["phase"] = g["phaseType"]["code"]  # play-in / playoffs / final four: not in the standings
         if g["played"]:
             game["score"] = [g["local"]["score"], g["road"]["score"]]
             game["quarters"] = [
@@ -226,6 +228,19 @@ def main():
     model_json = ratings.to_json(teams)
     model_json["pace"] = {t: round(pace.team(t), 2) for t in teams}
     # teams that weren't in last season's EuroLeague: their starting rating is only a rough guess
+    # Official regular-season order (EuroLeague tie-breakers: head-to-head and so on), which the site
+    # can't always work out from wins and point difference alone.
+    official = None
+    rs_rounds = [g["round"] for g in played if g["phaseType"]["code"] == "RS"]
+    if rs_rounds:
+        try:
+            url = f"https://api-live.euroleague.net/v3/competitions/E/seasons/{SEASON_CODE}/rounds/{max(rs_rounds)}/basicstandings"
+            official = {"round": max(rs_rounds),
+                        "teams": {t["club"]["code"]: [t["position"], t["gamesPlayed"], t["gamesWon"]]
+                                  for t in model.fetch_json(url, attempts=3)["teams"]}}
+        except Exception as e:  # the site then falls back to its own order
+            print(f"  official standings not available ({e})")
+
     new_teams = sorted(set(teams) - model.season_teams(model.history_games(model.previous(SEASON_CODE))))
 
     availability = {}
@@ -248,6 +263,7 @@ def main():
         f"const GAMES = {json.dumps(games, ensure_ascii=False, separators=(',', ':'))};\n"
         f"const MODEL = {json.dumps(model_json)};\n"
         f"const NEW_TEAMS = {json.dumps(new_teams)};\n"
+        f"const OFFICIAL = {json.dumps(official)};\n"
         f"const AVAILABILITY = {json.dumps(availability, separators=(',', ':'))};\n"
     )
     OUT.write_text(js, encoding="utf-8")

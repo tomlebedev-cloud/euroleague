@@ -140,8 +140,25 @@ The model has a real edge over a coin flip on winners and margins, but totals ar
 points vs 13.9 for the plain league average), and no test against real bookmaker odds has been done. Treat
 "value" as a signal to look closer, not a sure thing.
 
-Standings are sorted by wins, then point difference. The official EuroLeague tie-breaker (head-to-head)
-can differ when teams are level.
+### Ideas tested that did not help
+
+Checked the same way on 2023-24 to 2025-26 (log loss 0.6051 for the current model) and left out:
+
+| Idea | Result |
+|---|---|
+| Capping blowout margins when fitting ratings | no change (0.6049–0.6051) |
+| Rest days / short rest between EuroLeague games | no consistent effect; the sign differs by season |
+| A separate home advantage for every team | 0.6046 at best: too small to be real |
+| Valuing arrivals by their EuroCup PIR | worse (0.6065 and up) |
+| Valuing arrivals by their EuroLeague PIR two seasons ago | no change |
+| A fixed value for newcomers from other leagues | 0.6047, and worse early in the season |
+| Removing three-point / free-throw luck (`--luck`) | no gain on the unseen season |
+
+Win chances are already well calibrated: favourites given 70–80% won 73%, those given 80–90% won 86%.
+
+Standings follow the official EuroLeague order (downloaded with the data), which applies the league's
+tie-breakers such as head-to-head results. If the official table is behind the results shown, the site
+falls back to wins, then point difference. Only regular-season games count.
 
 ## Project structure
 

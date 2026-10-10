@@ -73,11 +73,12 @@ function teamLink(id, size = "sm") {
 // ---------- Standings ----------
 function computeStandings() {
   const rows = {};
-  TEAMS.forEach(t => rows[t.id] = { id: t.id, gp: 0, w: 0, l: 0, pf: 0, pa: 0, form: [] });
+  TEAMS.forEach(t => rows[t.id] = { id: t.id, gp: 0, w: 0, l: 0, pf: 0, pa: 0, form: [], home: [0, 0], away: [0, 0] });
 
-  played.forEach(g => {
+  played.filter(g => !g.phase).forEach(g => { // regular season only
     const [hs, as] = g.score;
     const h = rows[g.home], a = rows[g.away];
+    h.home[hs > as ? 0 : 1]++; a.away[as > hs ? 0 : 1]++;
     h.gp++; a.gp++;
     h.pf += hs; h.pa += as;
     a.pf += as; a.pa += hs;
@@ -85,9 +86,15 @@ function computeStandings() {
     else { a.w++; h.l++; a.form.push("W"); h.form.push("L"); }
   });
 
-  return Object.values(rows)
+  const list = Object.values(rows)
     .map(r => ({ ...r, diff: r.pf - r.pa, form: r.form.slice(-5) }))
     .sort((a, b) => b.w - a.w || b.diff - a.diff || b.pf - a.pf);
+  // Use the official EuroLeague order (it applies head-to-head tie-breakers), as long as it was made
+  // from the same results as the ones shown here.
+  const off = typeof OFFICIAL !== "undefined" && OFFICIAL && OFFICIAL.teams;
+  if (off && list.every(r => off[r.id] && off[r.id][1] === r.gp && off[r.id][2] === r.w))
+    list.sort((a, b) => off[a.id][0] - off[b.id][0]);
+  return list;
 }
 
 function standingsTable(rows, compact = false) {
@@ -95,7 +102,7 @@ function standingsTable(rows, compact = false) {
     <div class="table-wrap"><table>
       <thead><tr>
         <th>#</th><th class="left">${L("Team", "Komanda")}</th><th>${L("GP", "R")}</th><th>${L("W", "P")}</th><th>${L("L", "Pr")}</th>
-        ${compact ? "" : `<th>${L("PF", "ĮT")}</th><th>${L("PA", "PT")}</th>`}<th>+/-</th>${compact ? "" : `<th>${L("Form", "Forma")}</th>`}
+        ${compact ? "" : `<th>${L("Home", "Namie")}</th><th>${L("Away", "Išvykoje")}</th><th>${L("PF", "ĮT")}</th><th>${L("PA", "PT")}</th>`}<th>+/-</th>${compact ? "" : `<th>${L("Form", "Forma")}</th>`}
       </tr></thead>
       <tbody>
         ${rows.map((r, i) => `
@@ -103,7 +110,7 @@ function standingsTable(rows, compact = false) {
             <td class="pos">${i + 1}</td>
             <td class="left">${teamLink(r.id)}</td>
             <td>${r.gp}</td><td>${r.w}</td><td>${r.l}</td>
-            ${compact ? "" : `<td>${r.pf}</td><td>${r.pa}</td>`}
+            ${compact ? "" : `<td>${r.home.join("–")}</td><td>${r.away.join("–")}</td><td>${r.pf}</td><td>${r.pa}</td>`}
             <td class="${r.diff > 0 ? "plus" : r.diff < 0 ? "minus" : ""}">${signed(r.diff)}</td>
             ${compact ? "" : `<td><span class="form">${r.form.map(f => `<b class="${f}">${f}</b>`).join("")}</span></td>`}
           </tr>`).join("")}
