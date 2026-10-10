@@ -147,6 +147,61 @@ function predictionRecord(games = played) {
   return { right, total: done.length };
 }
 
+// Round-by-round history of the pre-game predictions, next to two simple yardsticks:
+// always picking the home team, and the bookmaker's favourite where odds were published (js/odds.js).
+function roundHistory() {
+  const book = (typeof BOOK_ODDS !== "undefined" && BOOK_ODDS.games) || {};
+  const homeWon = g => g.score[0] > g.score[1];
+  const stats = games => {
+    const right = games.filter(g => (g.pred[2] >= 0.5) === homeWon(g));
+    const withOdds = games.filter(g => book[g.code] && book[g.code].ml && book[g.code].ml[0] !== book[g.code].ml[1]);
+    const misses = games.filter(g => !right.includes(g)).sort((a, b) => Math.abs(b.pred[2] - 0.5) - Math.abs(a.pred[2] - 0.5));
+    return {
+      n: games.length, right: right.length,
+      home: games.filter(homeWon).length,
+      bookN: withOdds.length,
+      bookRight: withOdds.filter(g => (book[g.code].ml[0] < book[g.code].ml[1]) === homeWon(g)).length,
+      modelOnBook: withOdds.filter(g => (g.pred[2] >= 0.5) === homeWon(g)).length,
+      err: games.reduce((s, g) => s + Math.abs(g.pred[0] - g.pred[1] - (g.score[0] - g.score[1])), 0) / games.length,
+      worst: misses[0],
+    };
+  };
+  const done = played.filter(g => g.pred);
+  if (!done.length) return "";
+  const rounds = [...new Set(done.map(g => g.round))].sort((a, b) => b - a);
+  const frac = (a, b) => (b ? `${a}/${b}` : "–");
+  const row = (label, s, cls = "") => `<tr class="${cls}">
+    <td class="left">${label}</td>
+    <td><b>${s.right}/${s.n}</b></td><td>${Math.round(100 * s.right / s.n)}%</td>
+    <td>${s.home}/${s.n}</td>
+    <td>${s.bookN ? `${frac(s.bookRight, s.bookN)} <span class="muted">(${L("model", "modelis")} ${frac(s.modelOnBook, s.bookN)})</span>` : "–"}</td>
+    <td>${s.err.toFixed(1)}</td>
+    <td class="left">${s.worst && cls !== "total" ? (() => {
+      const g = s.worst, p = Math.max(g.pred[2], 1 - g.pred[2]);
+      const fav = teamById[g.pred[2] >= 0.5 ? g.home : g.away], dog = teamById[g.pred[2] >= 0.5 ? g.away : g.home];
+      return `<a href="#game/${g.code}">${esc(fav.name)} ${Math.round(100 * p)}%</a> <span class="muted">${L("lost to", "pralaimėjo prieš")} ${esc(dog.name)}</span>`;
+    })() : ""}</td></tr>`;
+  return `<div class="card">
+    <h2>${L("Round by round", "Pagal turus")}</h2>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th class="left">${L("Round", "Turas")}</th><th>${L("Model right", "Modelis atspėjo")}</th><th>%</th>
+        <th>${L("Home team won", "Laimėjo šeimininkai")}</th><th>${L("Bookmaker's favourite won", "Laimėjo lažybų favoritas")}</th>
+        <th>${L("Margin error", "Skirtumo paklaida")}</th><th class="left">${L("Biggest miss", "Didžiausia klaida")}</th>
+      </tr></thead>
+      <tbody>
+        ${rounds.map(r => row(L(`Round ${r}`, `${r} turas`), stats(done.filter(g => g.round === r)))).join("")}
+        ${row(L("Season", "Sezonas"), stats(done), "total")}
+      </tbody>
+    </table></div>
+    <p class="note">${L(
+      `Margin error = average gap in points between the predicted and the real score difference. The bookmaker column
+       only counts games whose odds were published on this site before the round; in brackets, the model on those same games.`,
+      `Skirtumo paklaida = vidutinis taškų skirtumas tarp prognozuoto ir tikro rezultato skirtumo. Lažybų stulpelyje
+       skaičiuojamos tik rungtynės, kurių koeficientai buvo paskelbti šioje svetainėje prieš turą; skliaustuose – modelis tose pačiose rungtynėse.`)}</p>
+  </div>`;
+}
+
 function probBar(homeId, awayId, p) {
   const h = teamById[homeId], a = teamById[awayId];
   const hp = Math.round(p * 100), ap = 100 - hp;
@@ -362,6 +417,7 @@ const pages = {
           seasons this model picked 67% of winners; early-season rounds are the hardest.`, `Kiekvienos sužaistos rungtynės prognozuotos
           naudojant tik ankstesnes rungtynes. Per tris praėjusius sezonus modelis atspėjo 67 % nugalėtojų; sezono pradžia sunkiausia.`)}</p>
       </div>` : ""}
+      ${roundHistory()}
       <div class="card">
         <h2>${L("Pick any match-up", "Pasirinkite bet kurią porą")}</h2>
         <div class="controls">

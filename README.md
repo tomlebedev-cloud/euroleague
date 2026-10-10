@@ -91,8 +91,9 @@ Lower log loss / Brier means better win probabilities. The biggest gain is early
 checked on 2025-26; the probability scale was fitted on all three seasons, since one season alone gave an
 unstable value. Run `python backtest.py` to reproduce, `python backtest.py --tune` to search settings.
 
-The site also shows the model's live track record for the current season, and on every finished game
-what it predicted before tip-off.
+The site also shows the model's live track record for the current season round by round (next to
+"home team won" and the bookmaker's favourite, with the most confident miss of each round), and on every
+finished game what it predicted before tip-off.
 
 ### Betting page
 

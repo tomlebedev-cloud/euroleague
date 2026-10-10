@@ -111,6 +111,7 @@ tr:last-child td { border-bottom: none; }
 .round-title { font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 4px 0; }
 
 /* ---------- Controls ---------- */
+tr.total td { border-top: 2px solid var(--border); font-weight: 600; }
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
 .tabs a { text-decoration: none; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); }
 .tabs a.active { background: var(--accent); border-color: var(--accent); color: #fff; }
