@@ -189,3 +189,18 @@ a.tab.active { background: var(--accent); border-color: var(--accent); color: #f
 .lang { display: flex; gap: 2px; order: 3; }
 .lang button { padding: 3px 8px; font-size: .8rem; font-weight: 700; background: transparent; color: #c9ccd3; border-color: rgba(255,255,255,.2); }
 .lang button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ---------- Wide tables and small screens ---------- */
+/* Keep the team / player name in view while a wide table is scrolled sideways. */
+.table-wrap :is(td, th):nth-child(1 of .left) { position: sticky; left: 0; z-index: 1; background: var(--card); }
+.game .score small { white-space: nowrap; }
+
+@media (max-width: 760px) {
+  /* the menu wraps to several rows on a phone: let it scroll away instead of covering the page */
+  header { position: static; }
+  .header-inner { gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+  nav a { padding: 5px 8px; font-size: .9rem; }
+  .card { padding: 12px; }
+  th, td { padding: 7px 8px; }
+  .table-wrap :is(td, th):nth-child(1 of .left) { max-width: 150px; white-space: normal; box-shadow: 1px 0 0 var(--border); }
+}
