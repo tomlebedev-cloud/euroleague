@@ -44,10 +44,18 @@ function reasons(g, side) {
     vs an average team), ${esc(O.name)} ${ordinal(ro.pos)} (${signed(+ro.net.toFixed(1))}).`,
     `Reitingas: ${esc(P.name)} ${ordinal(rp.pos)} iš ${n} (${signed(+rp.net.toFixed(1))} taško per rungtynes, palyginti su
     vidutine komanda), ${esc(O.name)} ${ordinal(ro.pos)} (${signed(+ro.net.toFixed(1))}).`));
+  const favourite = (p.margin >= 0) === (side === "home"); // is the pick the team the model expects to win?
   if (!g.neutral) out.push(side === "home"
     ? L(`Home court: worth about ${MODEL.hca} points.`, `Namų aikštė: verta maždaug ${MODEL.hca} taškų.`)
-    : L(`Plays away: the model already takes ${MODEL.hca} points off for that and still prefers ${esc(P.name)}.`,
-        `Žaidžia svečiuose: modelis už tai jau atima ${MODEL.hca} taškus ir vis tiek labiau tiki ${esc(P.name)}.`));
+    : favourite
+      ? L(`Plays away: the model already takes ${MODEL.hca} points off for that and still prefers ${esc(P.name)}.`,
+          `Žaidžia svečiuose: modelis už tai jau atima ${MODEL.hca} taškus ir vis tiek labiau tiki ${esc(P.name)}.`)
+      : L(`Plays away: the model takes ${MODEL.hca} points off for that.`,
+          `Žaidžia svečiuose: modelis už tai atima ${MODEL.hca} taškus.`));
+  if (!favourite) out.unshift(`<span class="minus">${L(`Underdog: the model also expects ${esc(O.name)} to win. The bet is only
+    about the price: the model gives ${esc(P.name)} a better chance than the odds imply, but it still loses more often than not.`,
+    `Autsaideris: modelis irgi tikisi ${esc(O.name)} pergalės. Statymas remiasi tik kaina: modelis ${esc(P.name)} duoda
+    didesnę tikimybę, nei rodo koeficientas, bet dažniau šis statymas vis tiek pralaimi.`)}</span>`);
   const rP = row(pick), rO = row(other);
   if (rP.gp) out.push(L(`This season: ${esc(P.short)} ${rP.w}–${rP.l} (${signed(rP.diff)}), form ${rP.form.join("") || "–"};
     ${esc(O.short)} ${rO.w}–${rO.l} (${signed(rO.diff)}), form ${rO.form.join("") || "–"}.`,
