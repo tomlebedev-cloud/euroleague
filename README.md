@@ -138,6 +138,12 @@ average this season (possessions from team box scores, shrunk toward the league 
 2024-25 and 2025-26. Winner and margin predictions don't change. Taking shooting luck (3-point and free-throw
 percentages) out of the ratings was also tested (`--luck`) and made predictions worse, so it is off.
 
+**Domestic leagues (tested, not used).** `python domestic.py test` checks whether a team's results in its
+domestic league (ACB, Greek, Turkish, Italian, German, French, Israeli, Lithuanian and ABA leagues, from
+API-Sports) help predict its EuroLeague games. On 2023-24 and 2024-25 they did not: the change in domestic
+strength since last season, form over the last five domestic games and domestic strength itself all left
+log loss and margin error unchanged or worse. The free API plan also has no current season.
+
 The model has a real edge over a coin flip on winners and margins, but totals are weak (mean error 13.3
 points vs 13.9 for the plain league average), and no test against real bookmaker odds has been done. Treat
 "value" as a signal to look closer, not a sure thing.
