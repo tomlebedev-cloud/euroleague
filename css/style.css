@@ -204,3 +204,24 @@ a.tab.active { background: var(--accent); border-color: var(--accent); color: #f
   th, td { padding: 7px 8px; }
   .table-wrap :is(td, th):nth-child(1 of .left) { max-width: 150px; white-space: normal; box-shadow: 1px 0 0 var(--border); }
 }
+
+/* ---------- Staking plan chart ---------- */
+.plan-chart { --s1: #2a78d6; --s2: #eb6834; position: relative; overflow-x: auto; }
+@media (prefers-color-scheme: dark) { .plan-chart { --s1: #3987e5; --s2: #d95926; } }
+.plan-chart svg { width: 100%; min-width: 560px; height: auto; display: block; font-size: 12px; }
+.plan-chart .s1 { fill: var(--s1); background: var(--s1); }
+.plan-chart .s2 { fill: var(--s2); background: var(--s2); }
+.plan-chart .dot { fill: var(--text); stroke: var(--card); stroke-width: 2; }
+.plan-chart .hit { fill: transparent; }
+.plan-chart .grid { stroke: var(--border); stroke-width: 1; }
+.plan-chart .start { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.plan-chart .sep { stroke: var(--border); stroke-width: 1; }
+.plan-chart text { fill: var(--muted); }
+.plan-chart text.name { fill: var(--text); font-size: 13px; font-weight: 600; }
+.plan-chart text.val { fill: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.plan-chart .bar:hover rect:not(.hit) { opacity: .8; }
+.chart-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+.chart-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.chart-legend i.dot-key { width: 10px; height: 10px; border-radius: 50%; background: var(--text); }
+.chart-tip { position: absolute; max-width: 280px; padding: 6px 9px; border-radius: 6px; background: var(--head); color: #fff; font-size: .8rem; pointer-events: none; z-index: 5; }
+button.style-btn.primary { font-weight: 600; }

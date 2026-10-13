@@ -18,6 +18,7 @@ Plain HTML, CSS and JavaScript, plus one small Python script that downloads the 
 | **Predictions** | Win probability and predicted score for the next two rounds, plus a "pick any two teams" tool |
 | **Betting** | Next round simulated 40,000 times per game; compare with bookmaker odds, find value bets, keep a bet log |
 | **Ticket** | Suggested ticket for the next round with the reasons for each pick: value singles, a combo only when every leg has value, and the minimum odds each pick needs |
+| **Plan** | Staking plan: type in a bankroll, pick a staking style, get the round's slip (bet, odds, stake, "skip below" odds) to enter at the bookmaker; a chart compares the styles over 100 bets |
 
 ## Run it
 
@@ -189,6 +190,7 @@ css/style.css    styles (light + dark mode)
 js/app.js        pages, standings and stats
 js/betting.js    betting page: simulation, odds comparison, bet log
 js/ticket.js     ticket page: suggested bets and the reasons for them
+js/plan.js       staking plan page: the round's slip and the staking-style chart
 js/odds.js       bookmaker odds for the next round (edit by hand)
 js/data.js       generated data — don't edit by hand
 update_data.py   downloads data from the EuroLeague API

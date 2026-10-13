@@ -33,7 +33,7 @@ const L = (en, lt) => (LANG === "lt" ? lt : en);
 const NAV = {
   home: ["Home", "Pradžia"], standings: ["Standings", "Lentelė"], stats: ["Stats", "Statistika"],
   teams: ["Teams", "Komandos"], schedule: ["Schedule", "Tvarkaraštis"], predictions: ["Predictions", "Prognozės"],
-  bets: ["Betting", "Statymai"], ticket: ["Ticket", "Bilietas"],
+  bets: ["Betting", "Statymai"], ticket: ["Ticket", "Bilietas"], plan: ["Plan", "Planas"],
 };
 function applyLanguage() {
   document.documentElement.lang = LANG;
