@@ -163,7 +163,7 @@ pages.ticket = params => {
   let ticket;
   if (sels.length) {
     const singles = value.length ? value.map(s => legCard(s.game, s,
-      `<p>${L("Bet", "Statymas")}: <b>${esc(s.label)}</b> ${L("at", "už")} <b>${s.odds.toFixed(2)}</b> · ${L("bookmaker", "lažybų bendr.")} ${pct(s.fair)}
+      `<p>${L("Bet", "Statymas")}: <b>${esc(s.label)}</b> ${L("at", "už")} <b>${s.odds.toFixed(2)}</b>${books.length > 1 && s.book ? ` (${esc(s.book)})` : ""} · ${L("bookmaker", "lažybų bendr.")} ${pct(s.fair)}
         ${L("vs model", "prieš modelį")} ${pct(s.model)} · ${L("value", "vertė")} ${evText(s.ev)} · ${L("stake", "suma")} <b>${s.stake.toFixed(2)}</b></p>`)).join("")
       : `<p class="muted">${L(`At the odds you entered nothing reaches ${betSettings.minEdge}% value. The honest ticket this round
           is no ticket, or wait for the odds to move.`, `Prie šių koeficientų niekas nepasiekia ${betSettings.minEdge}% vertės.

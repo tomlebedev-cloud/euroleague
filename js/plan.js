@@ -130,7 +130,7 @@ function slipRows(games) {
 function slipText(rows) {
   return rows.map((s, i) => {
     const g = s.game;
-    return `${i + 1}. ${teamById[g.home].name} – ${teamById[g.away].name} (${fmtDate(g.date)} ${fmtTime(g.date)}) | ${s.label} | ${s.odds.toFixed(2)} | ${s.stake.toFixed(2)} €`;
+    return `${i + 1}. ${teamById[g.home].name} – ${teamById[g.away].name} (${fmtDate(g.date)} ${fmtTime(g.date)}) | ${s.label} | ${books.length > 1 && s.book ? s.book + " " : ""}${s.odds.toFixed(2)} | ${s.stake.toFixed(2)} €`;
   }).join("\n");
 }
 
@@ -148,7 +148,7 @@ pages.plan = params => {
         `Prie dabartinių koeficientų nė vienas statymas nepasiekia ${betSettings.minEdge} % vertės. Šio turo planas: pinigų nestatyti.`)}</p>`
     : `<div class="table-wrap"><table>
         <thead><tr><th>#</th><th class="left">${L("Game", "Rungtynės")}</th><th class="left">${L("Market", "Rinka")}</th>
-          <th class="left">${L("Pick", "Pasirinkimas")}</th><th>${L("Odds", "Koef.")}</th><th>${L("Stake", "Suma")}</th>
+          <th class="left">${L("Pick", "Pasirinkimas")}</th>${books.length > 1 ? `<th class="left">${L("Where", "Kur")}</th>` : ""}<th>${L("Odds", "Koef.")}</th><th>${L("Stake", "Suma")}</th>
           <th>${L("If it wins", "Jei laimi")}</th><th>${L("Skip below", "Nestatyti žemiau")}</th></tr></thead>
         <tbody>${rows.map((s, i) => `<tr>
           <td class="muted">${i + 1}</td>
@@ -156,7 +156,7 @@ pages.plan = params => {
             <span class="muted">${fmtDate(s.game.date)} ${fmtTime(s.game.date)}</span></td>
           <td class="left muted">${marketName[s.market]}</td>
           <td class="left"><b>${esc(s.label)}</b>${s.underdog ? ` <span class="minus">${L("underdog", "autsaideris")}</span>` : ""}</td>
-          <td>${s.odds.toFixed(2)}</td><td><b>${s.stake.toFixed(2)} €</b></td>
+          ${books.length > 1 ? `<td class="left">${esc(s.book || "")}</td>` : ""}<td>${s.odds.toFixed(2)}</td><td><b>${s.stake.toFixed(2)} €</b></td>
           <td class="plus">+${(s.stake * (s.odds - 1)).toFixed(2)} €</td><td>${s.minOdds.toFixed(2)}</td>
         </tr>`).join("")}</tbody>
       </table></div>

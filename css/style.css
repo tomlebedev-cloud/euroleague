@@ -225,3 +225,11 @@ a.tab.active { background: var(--accent); border-color: var(--accent); color: #f
 .chart-legend i.dot-key { width: 10px; height: 10px; border-radius: 50%; background: var(--text); }
 .chart-tip { position: absolute; max-width: 280px; padding: 6px 9px; border-radius: 6px; background: var(--head); color: #fff; font-size: .8rem; pointer-events: none; z-index: 5; }
 button.style-btn.primary { font-weight: 600; }
+
+/* ---------- Bookmakers ---------- */
+.book { display: inline-flex; align-items: center; gap: 4px; }
+.book.active > button:first-child { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=text] { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); width: 170px; }
+.at { font-size: .75rem; padding: 1px 6px; border-radius: 99px; border: 1px solid var(--border); color: var(--muted); font-weight: 400; }
+.compare-table { margin: 4px 0 10px; font-size: .88rem; }
+.compare-table td.best { font-weight: 700; color: var(--win); }

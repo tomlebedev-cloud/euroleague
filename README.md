@@ -114,6 +114,11 @@ data update.
 bookmaker's site; they fill in every game you haven't entered your own odds for, and count in the odds history.
 Update it before each round.
 
+**Several bookmakers.** Add bookmakers by name on the Betting page and enter each one's odds (fields or
+template; a button per bookmaker switches which one you are entering). Every bet is then priced at the best
+odds among them, the bookmakers' chance is the average of their margin-free chances, and the bet table,
+ticket and staking plan say where to place it. Handicaps and totals are compared only at the same line.
+
 **Odds template.** "Copy template" gives a plain-text form with every game of the round
 (`Win: home away`, `Hcp: line home away`, `Tot: line over under`); fill in the bookmaker's odds and paste it
 back with "Apply" (or paste it into a chat).

@@ -22,10 +22,18 @@ function save(key, value) {
 const betSettings = Object.assign(
   { bankroll: 100, kelly: 0.25, maxPct: 2, minEdge: 5, modelWeight: 50 },
   load("bets.settings", {}));
-const odds = load("bets.odds", {});   // odds you typed: game code -> { ml: [h, a], hcp: [line, h, a], tot: [line, o, u] }
 // odds published with the site (js/odds.js) are used for games you haven't typed odds for
 const published = typeof BOOK_ODDS !== "undefined" ? BOOK_ODDS : { games: {} };
-const gameOdds = code => odds[code] || published.games[code] || {};
+const MAIN_BOOK = published.source || "TopSport";
+// Odds you typed, for each bookmaker: bookmaker -> game code -> { ml: [h, a], hcp: [line, h, a], tot: [line, o, u] }.
+// With several bookmakers the page takes the best price for each bet and averages their chances.
+const allOdds = load("bets.oddsBy", null) || { [MAIN_BOOK]: load("bets.odds", {}) }; // bets.odds: before bookmakers
+let books = load("bets.books", null) || Object.keys(allOdds);
+if (!books.includes(MAIN_BOOK)) books.unshift(MAIN_BOOK);
+let book = books.includes(load("bets.book", MAIN_BOOK)) ? load("bets.book", MAIN_BOOK) : MAIN_BOOK; // the one being typed in
+const bookOdds = (b = book) => (allOdds[b] = allOdds[b] || {});
+const gameOdds = (code, b = book) => bookOdds(b)[code] || (b === MAIN_BOOK && published.games[code]) || {};
+const saveOdds = () => { save("bets.oddsBy", allOdds); save("bets.books", books); save("bets.book", book); };
 let myBets = load("bets.log", []);    // [{ id, code, market, side, line, odds, stake, placed }]
 const lineups = load("bets.out", {});  // game code -> { player code: true (out) / false (plays) }
 // every set of odds you typed, with the model's chances at that moment (the model changes after each round):
@@ -126,23 +134,40 @@ function median(arr) {
 }
 
 // ---------- evaluating odds ----------
-// every selection that has odds typed in for game g
+// Every selection that has odds for game g. For each bet the best price among the bookmakers is used
+// (s.book says where), and "fair" is the bookmakers' chance with the margin removed, averaged over
+// the bookmakers that priced both sides. Handicaps and totals are compared only at the same line.
+function offers(g) {
+  const found = {}; // market|line -> { market, line, best: { side: { odds, book } }, fair: { side: sum }, n }
+  for (const b of books) {
+    const o = gameOdds(g.code, b);
+    const pair = (market, line, sideA, sideB, oddsA, oddsB) => {
+      const e = found[`${market}|${line}`] = found[`${market}|${line}`] || { market, line, best: {}, fair: {}, n: 0 };
+      [[sideA, oddsA], [sideB, oddsB]].forEach(([side, x]) => {
+        if (x > 1 && !(e.best[side]?.odds >= x)) e.best[side] = { odds: x, book: b };
+      });
+      if (oddsA > 1 && oddsB > 1) { // both sides: remove the bookmaker margin proportionally
+        const iA = 1 / oddsA, iB = 1 / oddsB;
+        e.fair[sideA] = (e.fair[sideA] || 0) + iA / (iA + iB);
+        e.fair[sideB] = (e.fair[sideB] || 0) + iB / (iA + iB);
+        e.n++;
+      }
+    };
+    if (o.ml) pair("ml", 0, "home", "away", o.ml[0], o.ml[1]);
+    if (o.hcp && o.hcp[0] != null && isFinite(o.hcp[0])) pair("hcp", o.hcp[0], "home", "away", o.hcp[1], o.hcp[2]);
+    if (o.tot && o.tot[0] > 0) pair("tot", o.tot[0], "over", "under", o.tot[1], o.tot[2]);
+  }
+  return Object.values(found);
+}
+
 function selections(g) {
-  const o = gameOdds(g.code), h = teamById[g.home], a = teamById[g.away];
   const out = [];
-  const pair = (market, line, sides) => {
-    const [s1, s2] = sides;
-    if (!(s1.odds > 1 && s2.odds > 1)) { // only one side typed: no fair-price comparison
-      sides.forEach(s => s.odds > 1 && out.push({ market, line, ...s, fair: null }));
-      return;
+  for (const e of offers(g)) {
+    for (const [side, best] of Object.entries(e.best)) {
+      out.push({ market: e.market, line: e.line, side, odds: best.odds, book: best.book,
+        fair: e.n ? e.fair[side] / e.n : null }); // one side typed only: no fair-price comparison
     }
-    const i1 = 1 / s1.odds, i2 = 1 / s2.odds; // remove the bookmaker margin proportionally
-    out.push({ market, line, ...s1, fair: i1 / (i1 + i2), vig: i1 + i2 - 1 });
-    out.push({ market, line, ...s2, fair: i2 / (i1 + i2), vig: i1 + i2 - 1 });
-  };
-  if (o.ml) pair("ml", 0, [{ side: "home", odds: o.ml[0] }, { side: "away", odds: o.ml[1] }]);
-  if (o.hcp && isFinite(o.hcp[0])) pair("hcp", o.hcp[0], [{ side: "home", odds: o.hcp[1] }, { side: "away", odds: o.hcp[2] }]);
-  if (o.tot && o.tot[0] > 0) pair("tot", o.tot[0], [{ side: "over", odds: o.tot[1] }, { side: "under", odds: o.tot[2] }]);
+  }
 
   const sim = simulate(g);
   return out.map(s => {
@@ -198,8 +223,8 @@ function settle(b) {
 // "Hcp: home-line home away", "Tot: line over under". Missing numbers are simply skipped.
 function oddsTemplate(games) {
   const v = x => x ?? "";
-  return L(`EuroLeague round ${games[0]?.round ?? ""} odds. Decimal odds; handicap line for the HOME team (e.g. -4.5).`,
-    `Eurolygos ${games[0]?.round ?? ""} turo koeficientai. Win = pergalė (namai, svečiai); Hcp = fora NAMŲ komandai (pvz. -4.5),
+  return L(`${book}: EuroLeague round ${games[0]?.round ?? ""} odds. Decimal odds; handicap line for the HOME team (e.g. -4.5).`,
+    `${book}: Eurolygos ${games[0]?.round ?? ""} turo koeficientai. Win = pergalė (namai, svečiai); Hcp = fora NAMŲ komandai (pvz. -4.5),
 namai, svečiai; Tot = totalas, daugiau, mažiau.`) + "\n\n"
     + games.map(g => {
       const o = gameOdds(g.code), h = teamById[g.home], a = teamById[g.away];
@@ -224,11 +249,12 @@ function applyTemplate(text) {
     const key = { win: "ml", hcp: "hcp", tot: "tot" }[m[1].toLowerCase()];
     const size = key === "ml" ? 2 : 3;
     if (nums.length < size) continue;
-    odds[code] = odds[code] || JSON.parse(JSON.stringify(published.games[code] || {}));
-    odds[code][key] = nums.slice(0, size);
+    const mine = bookOdds();
+    mine[code] = mine[code] || JSON.parse(JSON.stringify(gameOdds(code)));
+    mine[code][key] = nums.slice(0, size);
     changed.add(code);
   }
-  save("bets.odds", odds);
+  saveOdds();
   changed.forEach(c => { recordOdds(gameByCode[c]); n++; });
   return n;
 }
@@ -251,7 +277,7 @@ function recordOdds(g) {
     const entry = {
       t: new Date().toISOString(),
       out: [...p.outHome, ...p.outAway].map(x => x[0]),
-      sels: sels.map(x => ({ market: x.market, side: x.side, line: x.line, odds: x.odds,
+      sels: sels.map(x => ({ market: x.market, side: x.side, line: x.line, odds: x.odds, book: x.book,
         fair: +x.fair.toFixed(4), model: +x.model.toFixed(4), push: +x.push.toFixed(4) })),
     };
     if (recent) list[list.length - 1] = entry; else list.push(entry);
@@ -357,7 +383,7 @@ function betLabel(g, s) {
 
 // move everything saved to another browser
 function exportData() {
-  const data = { version: 1, exported: new Date().toISOString(), oddsLog, myBets, lineups, odds, settings: betSettings };
+  const data = { version: 1, exported: new Date().toISOString(), oddsLog, myBets, lineups, oddsBy: allOdds, books, settings: betSettings };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: `euroleague-bets-${new Date().toISOString().slice(0, 10)}.json` });
   a.click();
@@ -375,8 +401,12 @@ function importData(file) {
     const ids = new Set(myBets.map(b => b.id));
     myBets = myBets.concat((d.myBets || []).filter(b => !ids.has(b.id)));
     Object.assign(lineups, d.lineups || {});
-    Object.assign(odds, d.odds || {});
-    save("bets.oddsLog", oddsLog); save("bets.log", myBets); save("bets.out", lineups); save("bets.odds", odds);
+    const incoming = d.oddsBy || (d.odds ? { [MAIN_BOOK]: d.odds } : {}); // d.odds: files from before bookmakers
+    for (const [b, games] of Object.entries(incoming)) {
+      Object.assign(bookOdds(b), games);
+      if (!books.includes(b)) books.push(b);
+    }
+    save("bets.oddsLog", oddsLog); save("bets.log", myBets); save("bets.out", lineups); saveOdds();
     route();
   }).catch(() => alert(L("That file could not be read.", "Nepavyko perskaityti failo.")));
 }
@@ -497,7 +527,38 @@ function gameCard(g) {
       <label>${L("over", "daugiau")} ${oddsInput(g.code, "tot", 1, L("odds", "koef."))}</label>
       <label>${L("under", "mažiau")} ${oddsInput(g.code, "tot", 2, L("odds", "koef."))}</label>
     </div>
+    <div class="compare"></div>
     <div class="sel-table"></div>
+  </div>`;
+}
+
+// winner odds side by side when more than one bookmaker has them; the best price is marked
+function compareLine(g) {
+  const rows = books.map(b => [b, gameOdds(g.code, b).ml]).filter(([, ml]) => ml && (ml[0] > 1 || ml[1] > 1));
+  if (rows.length < 2) return "";
+  const best = [0, 1].map(i => Math.max(...rows.map(([, ml]) => ml[i] || 0)));
+  const cell = (ml, i) => ml[i] > 1 ? `<td class="${ml[i] === best[i] ? "best" : ""}">${ml[i].toFixed(2)}</td>` : "<td>–</td>";
+  return `<div class="table-wrap"><table class="compare-table">
+    <thead><tr><th class="left">${L("Winner odds", "Nugalėtojo koef.")}</th><th>${esc(teamById[g.home].short)}</th><th>${esc(teamById[g.away].short)}</th></tr></thead>
+    <tbody>${rows.map(([b, ml]) => `<tr><td class="left">${esc(b)}</td>${cell(ml, 0)}${cell(ml, 1)}</tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+function booksBar() {
+  return `<div class="card">
+    <h2>${L("Bookmakers", "Lažybų bendrovės")}</h2>
+    <div class="controls" style="margin-bottom:8px">
+      ${books.map(b => `<span class="book ${b === book ? "active" : ""}"><button data-book="${esc(b)}">${esc(b)}</button>${b === MAIN_BOOK ? ""
+        : `<button class="link" data-book-del="${esc(b)}" title="${L("Remove", "Pašalinti")}">✕</button>`}</span>`).join("")}
+      <input type="text" id="newBook" placeholder="${L("Add a bookmaker", "Pridėti bendrovę")}" maxlength="20">
+      <button id="addBook">${L("Add", "Pridėti")}</button>
+    </div>
+    <p class="note" style="margin:0">${L(`The odds fields and the template below are for <b>${esc(book)}</b>; press another name to enter its odds.
+      With two or more bookmakers every bet is priced at the best odds on offer, and you are told where to place it.
+      Use only bookmakers licensed in your country.`,
+      `Koeficientų laukeliai ir šablonas žemiau skirti <b>${esc(book)}</b>; paspauskite kitą pavadinimą, kad įvestumėte jos koeficientus.
+      Kai bendrovių dvi ar daugiau, kiekvienas statymas vertinamas pagal geriausią siūlomą koeficientą ir parodoma, kur statyti.
+      Naudokite tik jūsų šalyje licencijuotas bendroves.`)}</p>
   </div>`;
 }
 
@@ -506,10 +567,10 @@ function selTable(sels) {
   return `<div class="table-wrap"><table>
     <thead><tr><th class="left">${L("Bet", "Statymas")}</th><th>${L("Odds", "Koef.")}</th><th>${L("Bookmaker", "Lažybų bendr.")}</th><th>${L("Model", "Modelis")}</th><th>${L("Used", "Naudojama")}</th><th>${L("Value", "Vertė")}</th><th>${L("Stake", "Suma")}</th><th></th></tr></thead>
     <tbody>${sels.map(s => `<tr class="${isValue(s) ? "value" : ""}">
-      <td class="left">${esc(s.label)}</td><td>${s.odds.toFixed(2)}</td>
+      <td class="left">${esc(s.label)}${books.length > 1 && s.book ? ` <span class="at">${esc(s.book)}</span>` : ""}</td><td>${s.odds.toFixed(2)}</td>
       <td>${s.fair == null ? "–" : pct(s.fair)}</td><td>${pct(s.model)}</td><td>${pct(s.pWin)}</td>
       <td>${evText(s.ev)}</td><td>${s.stake ? s.stake.toFixed(2) : "–"}</td>
-      <td>${s.stake ? `<button class="link" data-add='${esc(JSON.stringify({ code: s.game.code, market: s.market, side: s.side, line: s.line, odds: s.odds, stake: s.stake, label: s.label }))}'>${L("+ my bets", "+ į mano statymus")}</button>` : ""}</td>
+      <td>${s.stake ? `<button class="link" data-add='${esc(JSON.stringify({ code: s.game.code, market: s.market, side: s.side, line: s.line, odds: s.odds, book: s.book, stake: s.stake, label: s.label }))}'>${L("+ my bets", "+ į mano statymus")}</button>` : ""}</td>
     </tr>`).join("")}</tbody>
   </table></div>`;
 }
@@ -562,8 +623,9 @@ pages.bets = params => {
         <b>Vertė</b> = tikėtina grąža nuo 1 € statymo. <b>Suma</b> = ${s.kelly} Kelly, ne daugiau ${s.maxPct}% banko.`)}
       </p>
     </div>
+    ${booksBar()}
     <div class="card">
-      <h2>${L("Odds template", "Koeficientų šablonas")}</h2>
+      <h2>${L("Odds template", "Koeficientų šablonas")} — ${esc(book)}</h2>
       <p class="note" style="margin-top:0">${L(`Faster than typing: copy the template, fill in TopSport's odds (in a notes app or
         right here), then paste it back below and press Apply. The same text can be pasted into a chat with Claude.`,
         `Greičiau nei vesti po vieną: nukopijuokite šabloną, įrašykite TopSport koeficientus (užrašuose arba čia pat),
@@ -617,6 +679,7 @@ setup.bets = params => {
 
   const renderGame = card => {
     const g = gameByCode[card.dataset.code];
+    card.querySelector(".compare").innerHTML = compareLine(g);
     card.querySelector(".sel-table").innerHTML = selTable(selections(g));
   };
   const renderBest = () => {
@@ -641,10 +704,11 @@ setup.bets = params => {
   document.querySelectorAll(".odds-grid input").forEach(inp => inp.addEventListener("input", () => {
     const { code, key, i } = inp.dataset;
     const size = key === "ml" ? 2 : 3;
-    odds[code] = odds[code] || JSON.parse(JSON.stringify(published.games[code] || {})); // start from the published ones
-    odds[code][key] = odds[code][key] || Array(size).fill(null);
-    odds[code][key][i] = inp.value === "" ? null : Number(inp.value);
-    save("bets.odds", odds);
+    const mine = bookOdds();
+    mine[code] = mine[code] || JSON.parse(JSON.stringify(gameOdds(code))); // start from the published ones
+    mine[code][key] = mine[code][key] || Array(size).fill(null);
+    mine[code][key][i] = inp.value === "" ? null : Number(inp.value);
+    saveOdds();
     renderGame(inp.closest(".bet-game"));
     renderBest();
     scheduleRecord(gameByCode[code]);
@@ -678,6 +742,30 @@ setup.bets = params => {
   });
 
   document.getElementById("exportBtn")?.addEventListener("click", exportData);
+
+  // bookmakers: choose which one the odds fields are for, add, remove
+  const addBook = () => {
+    const name = document.getElementById("newBook").value.trim();
+    if (!name) return;
+    if (!books.includes(name)) books.push(name);
+    book = name;
+    saveOdds();
+    route();
+  };
+  document.getElementById("addBook")?.addEventListener("click", addBook);
+  document.getElementById("newBook")?.addEventListener("keydown", e => { if (e.key === "Enter") addBook(); });
+  page && page.addEventListener("click", e => {
+    const pick = e.target.closest("[data-book]"), del = e.target.closest("[data-book-del]");
+    if (del) {
+      books = books.filter(b => b !== del.dataset.bookDel);
+      delete allOdds[del.dataset.bookDel];
+      if (book === del.dataset.bookDel) book = MAIN_BOOK;
+    } else if (pick) {
+      book = pick.dataset.book;
+    } else return;
+    saveOdds();
+    route();
+  });
 
   const box = document.getElementById("templateBox"), msg = document.getElementById("templateMsg");
   document.getElementById("copyTemplate")?.addEventListener("click", () => {
