@@ -3,7 +3,7 @@
 // game code -> { ml: [home, away], hcp: [home line, home, away], tot: [line, over, under] }
 const BOOK_ODDS = {
   source: "TopSport",
-  taken: "2026-10-13",
+  taken: "2026-10-15",
   games: {
     // round 4 (taken 2026-10-05)
     31: { ml: [1.42, 2.90] },  // Paris – LDLC ASVEL
@@ -27,18 +27,26 @@ const BOOK_ODDS = {
     48: { ml: [1.32, 3.40] },  // Hapoel TLV – Besiktas
     49: { ml: [1.34, 3.25] },  // Anadolu Efes – Bayern Munich
     50: { ml: [1.49, 2.65] },  // Paris – Virtus Bologna
-    // round 6 (taken 2026-10-13; Fenerbahce – Partizan not offered yet)
-    52: { ml: [1.41, 2.95] },  // Valencia – Maccabi
-    51: { ml: [2.04, 1.78] },  // Milan – Dubai
-    53: { ml: [1.11, 6.60] },  // Real Madrid – LDLC ASVEL
-    57: { ml: [1.40, 2.95] },  // Zalgiris – Anadolu Efes
-    55: { ml: [1.60, 2.35] },  // Besiktas – Bayern Munich
-    56: { ml: [1.29, 3.60] },  // Crvena Zvezda – Paris
-    60: { ml: [1.30, 3.55] },  // Panathinaikos – Hapoel TLV
-    59: { ml: [1.61, 2.33] },  // Virtus Bologna – Baskonia
-    58: { ml: [2.34, 1.61] },  // FC Barcelona – Olympiacos
+    // round 6 (taken 2026-10-15, morning of the first games)
+    54: { ml: [1.15, 6.20] },  // Fenerbahce – Partizan
+    52: { ml: [1.30, 3.80] },  // Valencia – Maccabi
+    51: { ml: [2.18, 1.75] },  // Milan – Dubai
+    53: { ml: [1.10, 7.00] },  // Real Madrid – LDLC ASVEL
+    57: { ml: [1.35, 3.20] },  // Zalgiris – Anadolu Efes
+    55: { ml: [1.56, 2.43] },  // Besiktas – Bayern Munich
+    56: { ml: [1.28, 3.75] },  // Crvena Zvezda – Paris
+    60: { ml: [1.26, 3.95] },  // Panathinaikos – Hapoel TLV
+    59: { ml: [1.59, 2.37] },  // Virtus Bologna – Baskonia
+    58: { ml: [2.38, 1.59] },  // FC Barcelona – Olympiacos
+    // round 7 (taken 2026-10-15; Zalgiris – ASVEL, Olympiacos – Fenerbahce, Paris – Valencia not offered yet)
+    61: { ml: [1.25, 4.00] },  // Hapoel TLV – Virtus Bologna
+    64: { ml: [1.51, 2.60] },  // Anadolu Efes – Besiktas
+    65: { ml: [2.34, 1.60] },  // Bayern Munich – Dubai
+    62: { ml: [2.85, 1.43] },  // Maccabi – Real Madrid
+    67: { ml: [1.09, 7.80] },  // Panathinaikos – Baskonia
+    63: { ml: [1.61, 2.34] },  // Milan – FC Barcelona
+    66: { ml: [1.52, 2.55] },  // Partizan – Crvena Zvezda
     // later rounds
-    66: { ml: [1.85, 1.85] },  // round 7: Partizan – Crvena Zvezda
     160: { ml: [1.50, 2.40] }, // round 16: Panathinaikos – Olympiacos
   },
 };
