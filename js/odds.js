@@ -3,7 +3,7 @@
 // game code -> { ml: [home, away], hcp: [home line, home, away], tot: [line, over, under] }
 const BOOK_ODDS = {
   source: "TopSport",
-  taken: "2026-10-15",
+  taken: "2026-10-17",
   games: {
     // round 4 (taken 2026-10-05)
     31: { ml: [1.42, 2.90] },  // Paris – LDLC ASVEL
@@ -38,14 +38,17 @@ const BOOK_ODDS = {
     60: { ml: [1.26, 3.95] },  // Panathinaikos – Hapoel TLV
     59: { ml: [1.59, 2.37] },  // Virtus Bologna – Baskonia
     58: { ml: [2.38, 1.59] },  // FC Barcelona – Olympiacos
-    // round 7 (taken 2026-10-15; Zalgiris – ASVEL, Olympiacos – Fenerbahce, Paris – Valencia not offered yet)
+    // round 7 (taken 2026-10-17)
     61: { ml: [1.25, 4.00] },  // Hapoel TLV – Virtus Bologna
     64: { ml: [1.51, 2.60] },  // Anadolu Efes – Besiktas
     65: { ml: [2.34, 1.60] },  // Bayern Munich – Dubai
-    62: { ml: [2.85, 1.43] },  // Maccabi – Real Madrid
-    67: { ml: [1.09, 7.80] },  // Panathinaikos – Baskonia
+    62: { ml: [2.90, 1.41] },  // Maccabi – Real Madrid
+    67: { ml: [1.06, 9.80] },  // Panathinaikos – Baskonia
     63: { ml: [1.61, 2.34] },  // Milan – FC Barcelona
     66: { ml: [1.52, 2.55] },  // Partizan – Crvena Zvezda
+    68: { ml: [1.19, 4.70] },  // Zalgiris – LDLC ASVEL
+    70: { ml: [1.53, 2.50] },  // Olympiacos – Fenerbahce
+    69: { ml: [2.34, 1.61] },  // Paris – Valencia
     // later rounds
     160: { ml: [1.50, 2.40] }, // round 16: Panathinaikos – Olympiacos
   },
