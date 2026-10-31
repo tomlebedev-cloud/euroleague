@@ -3,7 +3,7 @@
 // game code -> { ml: [home, away], hcp: [home line, home, away], tot: [line, over, under] }
 const BOOK_ODDS = {
   source: "TopSport",
-  taken: "2026-10-29",
+  taken: "2026-10-31",
   games: {
     // round 4 (taken 2026-10-05)
     31: { ml: [1.42, 2.90] },  // Paris – LDLC ASVEL
@@ -70,6 +70,9 @@ const BOOK_ODDS = {
     90: { ml: [1.12, 6.20] },  // Olympiacos – Milan
     89: { ml: [1.68, 2.19] },  // Virtus Bologna – Besiktas
     87: { ml: [1.80, 2.02] },  // FC Barcelona – Valencia
+    // round 10 (taken 2026-10-31; only these two offered so far)
+    91: { ml: [1.87, 1.94] },  // Real Madrid – Panathinaikos
+    97: { ml: [2.20, 1.60] },  // Besiktas – Zalgiris
     // later rounds
     160: { ml: [1.50, 2.40] }, // round 16: Panathinaikos – Olympiacos
   },
