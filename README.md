@@ -167,6 +167,18 @@ team the same chance. Calibration is good in the middle (teams given 50–70% ma
 little overconfident near the top (79% → 75%). Final wins were off by 2.5 on average early in the season and
 1.7 after round 20. Ties are ordered by point difference, not the official head-to-head rule.
 
+### Model against the bookmaker
+
+`python backtest.py --market` compares the model's pre-game predictions with the TopSport prices published on
+the site this season. After 59 games the two are level (69% of winners each, log loss 0.601 vs 0.602), and the
+half-and-half blend used on the Betting page is a little better than either (0.595). When they disagreed by 10+
+points, the side the model preferred won 11 of 15. That is far too few games to prove an edge, and the last
+published price is not always the closing price, which flatters the model.
+
+The Betting page shows how a price has moved since it was first seen (`open` in `js/odds.js`) and warns when it
+moves 4+ points away from a side the model rates 10+ points above the bookmaker, with a link to search the news.
+That happened three times up to round 9 and the model's side won once. The model knows nothing about injuries.
+
 ### Ideas tested that did not help
 
 Checked the same way on 2023-24 to 2025-26 (log loss 0.6051 for the current model) and left out:

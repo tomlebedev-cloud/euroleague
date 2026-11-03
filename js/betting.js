@@ -459,6 +459,37 @@ function lineupList(g, team) {
     </label>`).join("");
 }
 
+// How the published winner price moved since it was first seen, and whether that goes against the model.
+// A warning only needs a clear gap and a clear move: on 2026-27 the three such games went 1 of 3 for the model
+// (see backtest.py --market). Too few to prove anything, but each one is worth a look at the team news.
+const MOVE_MIN = 0.04, GAP_MIN = 0.10;
+const fairHome = o => (1 / o[0]) / (1 / o[0] + 1 / o[1]);
+function marketMove(g, pHome) {
+  const o = published.games[g.code];
+  if (!o || !o.ml || !o.open) return null;
+  const first = fairHome(o.open), now = fairHome(o.ml), move = now - first;
+  // moved away from the side the model prefers to the bookmaker's price
+  const against = Math.abs(move) >= MOVE_MIN && Math.abs(pHome - now) >= GAP_MIN && move * (pHome - now) < 0;
+  return { o, first, now, move, against };
+}
+function marketLine(g, pHome) {
+  const m = marketMove(g, pHome);
+  if (!m) return "";
+  const h = teamById[g.home], a = teamById[g.away];
+  const price = x => x.toFixed(2);
+  const line = `${L("Price since first seen", "Kaina nuo pirmo karto")}: ${esc(h.short)} ${price(m.o.open[0])} → ${price(m.o.ml[0])},
+    ${esc(a.short)} ${price(m.o.open[1])} → ${price(m.o.ml[1])}`;
+  if (!m.against) return `<p class="note out-line">${line}</p>`;
+  const team = pHome > m.now ? h : a; // the side the market is leaving
+  const news = `https://www.google.com/search?tbm=nws&q=${encodeURIComponent(`${team.name} EuroLeague injury`)}`;
+  return `<p class="market-warn"><b>${L("Check the news", "Patikrinkite naujienas")}:</b> ${line}.
+    ${L(`The market is moving away from ${esc(team.name)} while the model still likes them. The model knows nothing about
+      injuries, so the "value" below may not be real.`,
+      `Rinka traukiasi nuo ${esc(team.name)}, o modelis juos vis dar vertina aukštai. Modelis nieko nežino apie traumas, todėl
+      žemiau rodoma „vertė“ gali būti netikra.`)}
+    <a href="${news}" target="_blank" rel="noopener">${L("Search news", "Ieškoti naujienų")} →</a></p>`;
+}
+
 function modelBox(g) {
   const sim = simulate(g), p = sim.pred, h = teamById[g.home], a = teamById[g.away];
   const pHome = chances(sim, "ml", "home", 0).win;
@@ -476,6 +507,7 @@ function modelBox(g) {
     <p class="model-line">${L("Model", "Modelis")}: <b>${p.homePts}–${p.awayPts}</b> · ${esc(h.short)} ${L("wins", "laimi")} ${pct(pHome)}
       (${L("fair odds", "teisingi koef.")} ${fairOdds(pHome)} / ${fairOdds(1 - pHome)}) · ${L("fair handicap", "teisinga fora")} <b>${esc(h.short)} ${signed(fairHcp)}</b>
       · ${L("fair total", "teisingas totalas")} <b>${fairTot}</b>${shift}</p>
+    ${marketLine(g, pHome)}
     ${outs ? `<p class="note out-line">${L("Key players out", "Nežais pagrindiniai žaidėjai")}: ${outs}</p>` : ""}
     <details class="lines" data-details="lineup"><summary>${L("Line-ups: tick players who won't play", "Sudėtys: pažymėkite nežaisiančius žaidėjus")}</summary>
       <div class="grid-2">

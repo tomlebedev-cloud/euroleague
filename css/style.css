@@ -119,6 +119,7 @@ td.fc { position: relative; min-width: 96px; }
 a.plain { text-decoration: none; }
 a.plain:hover { text-decoration: underline; }
 .team-cell.inline { display: inline-flex; vertical-align: middle; }
+.market-warn { font-size: .88rem; border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
 tr.total td { border-top: 2px solid var(--border); font-weight: 600; }
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
 .tabs a { text-decoration: none; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); }

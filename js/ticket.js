@@ -65,6 +65,11 @@ function reasons(g, side) {
     the model trusts last season and the rosters more than ${rP.gp} games. Bet smaller or skip.`,
     `Prieš: ${esc(O.short)} šį sezoną pradėjo geriau; modelis labiau pasitiki praėjusiu sezonu ir sudėtimis nei ${rP.gp}
     rungtynėmis. Statykite mažiau arba praleiskite.`)}</span>`);
+  const move = marketMove(g, chances(simulate(g), "ml", "home", 0).win);
+  if (move && move.against) out.push(`<span class="minus">${L(`Check the news: the price has moved against the model
+    (${esc(teamById[g.home].short)} ${move.o.open[0].toFixed(2)} → ${move.o.ml[0].toFixed(2)}), which often means injuries the model can't see.`,
+    `Patikrinkite naujienas: kaina juda prieš modelį (${esc(teamById[g.home].short)} ${move.o.open[0].toFixed(2)} → ${move.o.ml[0].toFixed(2)}),
+    o tai dažnai reiškia traumas, kurių modelis nemato.`)}</span>`);
   const meetings = played.filter(x => (x.home === pick && x.away === other) || (x.home === other && x.away === pick));
   meetings.forEach(x => out.push(`${L("Earlier this season", "Anksčiau šį sezoną")}: ${esc(teamById[x.home].short)} ${x.score[0]}–${x.score[1]} ${esc(teamById[x.away].short)}.`));
   const outPick = side === "home" ? p.outHome : p.outAway, outOther = side === "home" ? p.outAway : p.outHome;

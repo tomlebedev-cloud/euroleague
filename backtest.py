@@ -8,16 +8,21 @@ Measure prediction accuracy on past seasons.
     python backtest.py --luck   # take shooting luck out of the ratings (model.LUCK); downloads team totals once
     python backtest.py --pace   # pace adjustment of predicted totals (model.PACE)
     python backtest.py --season # season forecast (model.SEASON_SIM): chances of finishing top 6 / top 10
+    python backtest.py --market # this season: model against the published odds (js/data.js, git history of js/odds.js)
 
 Every game is predicted using only games played before it, exactly like the website does live.
 Past seasons are downloaded once into .cache/history/.
 """
 
 import itertools
+import json
 import math
+import re
 import statistics
+import subprocess
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 import model
 
@@ -373,6 +378,51 @@ def season():
                       f"happened {statistics.mean(r[j] for r in sel):.0%} of {len(sel)} times")
 
 
+# ---------- model against the bookmaker, this season ----------
+def market():
+    """Uses each game's pre-game prediction from js/data.js and every price js/odds.js has held in git.
+    The last published price isn't always the closing price, so this flatters the model a little."""
+    root = Path(__file__).parent
+    data = (root / "js" / "data.js").read_text(encoding="utf-8")
+    games = json.loads(re.search(r"^const GAMES = (.*);$", data, re.M).group(1))
+    price = re.compile(r"^\s*(\d+): \{ ml: \[([\d.]+), ([\d.]+)\]", re.M)
+    git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, text=True, encoding="utf-8").stdout
+    hist = {}
+    for commit in git("log", "--reverse", "--format=%h", "--", "js/odds.js").split():
+        for code, h, a in price.findall(git("show", f"{commit}:js/odds.js")):
+            seen = hist.setdefault(int(code), [])
+            if not seen or seen[-1] != (float(h), float(a)):
+                seen.append((float(h), float(a)))
+    fair = lambda o: (1 / o[0]) / (1 / o[0] + 1 / o[1])
+    rows = []
+    for g in games:
+        if g["score"] and g.get("pred") and g["code"] in hist:
+            o = hist[g["code"]]
+            rows.append({"m": g["pred"][2], "b": fair(o[-1]), "f": fair(o[0]), "o": o[-1],
+                         "hw": g["score"][0] > g["score"][1]})
+    ll = lambda p, y: -math.log(p if y else 1 - p)
+
+    def line(name, sel):
+        n = len(sel)
+        if n:
+            print(f"{name}: {n} games, winners right: model {sum((r['m'] >= .5) == r['hw'] for r in sel) / n:.0%}, "
+                  f"bookmaker {sum((r['b'] >= .5) == r['hw'] for r in sel) / n:.0%}; log loss: model "
+                  f"{sum(ll(r['m'], r['hw']) for r in sel) / n:.3f}, bookmaker {sum(ll(r['b'], r['hw']) for r in sel) / n:.3f}, "
+                  f"half and half {sum(ll((r['m'] + r['b']) / 2, r['hw']) for r in sel) / n:.3f}")
+
+    line("All", rows)
+    for lo in (.05, .10, .15):
+        sel = [r for r in rows if abs(r["m"] - r["b"]) >= lo]
+        line(f"Disagreeing by {lo:.0%}+", sel)
+        won = sum(r["hw"] == (r["m"] > r["b"]) for r in sel)
+        pnl = sum((r["o"][0 if r["m"] > r["b"] else 1] - 1) if r["hw"] == (r["m"] > r["b"]) else -1 for r in sel)
+        print(f"  the side the model preferred won {won}/{len(sel)}; 1 unit on each: {pnl:+.2f}")
+    moved = [r for r in rows if abs(r["b"] - r["f"]) >= .04 and abs(r["m"] - r["b"]) >= .10
+             and (r["b"] - r["f"]) * (r["m"] - r["b"]) < 0]
+    print(f"Price moved 4+ points against a model that disagrees by 10+: the model's side won "
+          f"{sum(r['hw'] == (r['m'] > r['b']) for r in moved)}/{len(moved)}")
+
+
 if __name__ == "__main__":
     if "--tune" in sys.argv:
         tune()
@@ -386,5 +436,7 @@ if __name__ == "__main__":
         pace()
     elif "--season" in sys.argv:
         season()
+    elif "--market" in sys.argv:
+        market()
     else:
         report(TEST_SEASONS)
