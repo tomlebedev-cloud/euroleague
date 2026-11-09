@@ -73,7 +73,7 @@ The model lives in `model.py` and runs inside `update_data.py`; the website only
   **adjusted for opponent strength**. Recent games count more (a game 240 days old counts half).
 - **Preseason starting point.** Ratings begin at 85% of last season's level, adjusted for **summer
   transfers**: the last-season EuroLeague PIR of players who arrived minus players who left
-  (2 points per 1000 PIR). This starting point is worth about 30 games of evidence, so early-season
+  (2 points per 1000 PIR); a team new to the EuroLeague starts 4 points below average. This starting point is worth about 30 games of evidence, so early-season
   predictions lean on it and this season's results gradually take over.
 - **Game prediction.** Predicted score = league average + attack + opponent's defence, with +3 points for
   the home team (none at the Final Four). The margin becomes a win chance with a logistic curve.

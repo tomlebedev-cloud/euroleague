@@ -35,7 +35,10 @@ PRIOR_STRENGTH = 30.0          # games' worth of weight on the prior
 CARRYOVER = 0.85               # share of last season's rating kept
 RECENCY_HALF_LIFE_DAYS = 240   # a game this many days old counts half
 TALENT_WEIGHT = 2.0          # net points per 1000 PIR of roster change
-NEW_TEAM_PRIOR = (-1.0, 1.0)  # (offense, defense) for teams not in last season: slightly below average
+# (offense, defense) for teams not in last season. New teams have tended to be weaker than their roster
+# suggests (Paris 2024-25, Dubai and Hapoel 2025-26 all ended below their start); starting 4 points
+# below average instead of 2 lowered log loss on their games from 0.6436 to 0.6421.
+NEW_TEAM_PRIOR = (-2.0, 2.0)
 LOGISTIC_SCALE = 5.7          # margin -> probability: p = 1 / (1 + exp(-margin / scale))
 DEFAULT_AVERAGE = 80.0        # league points per team per game when nothing is known
 
