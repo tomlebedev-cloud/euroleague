@@ -5,7 +5,7 @@
 // to show how the price moved and to warn when it moves against the model.
 const BOOK_ODDS = {
   source: "TopSport",
-  taken: "2026-11-09",
+  taken: "2026-11-10",
   games: {
     // round 4 (taken 2026-10-05)
     31: { ml: [1.42, 2.90] },  // Paris – LDLC ASVEL
@@ -83,16 +83,16 @@ const BOOK_ODDS = {
     100: { ml: [1.44, 3.00], open: [1.37, 3.15] }, // Olympiacos – Crvena Zvezda
     98: { ml: [2.55, 1.56], open: [2.01, 1.81] },  // Virtus Bologna – Dubai
     99: { ml: [1.46, 2.90], open: [1.56, 2.46] },  // Partizan – Maccabi
-    // round 11 (taken 2026-11-09, two to four days before the games)
-    102: { ml: [1.29, 3.65] }, // Partizan – Baskonia
-    101: { ml: [3.50, 1.31] }, // Paris – Fenerbahce
+    // round 11 (taken 2026-11-09; refreshed 2026-11-10)
+    102: { ml: [1.24, 4.10], open: [1.29, 3.65] }, // Partizan – Baskonia
+    101: { ml: [3.60, 1.30], open: [3.50, 1.31] }, // Paris – Fenerbahce
     103: { ml: [2.65, 1.49] }, // Maccabi – Hapoel TLV
     107: { ml: [1.45, 2.80] }, // Olympiacos – Dubai
     105: { ml: [1.22, 4.30] }, // Valencia – Bayern Munich
     104: { ml: [2.17, 1.69], open: [2.20, 1.60] }, // Milan – Zalgiris (first seen 2026-11-03)
     106: { ml: [1.36, 3.20] }, // Real Madrid – Crvena Zvezda
     109: { ml: [1.53, 2.50] }, // Anadolu Efes – Virtus Bologna
-    110: { ml: [1.17, 5.20] }, // Panathinaikos – FC Barcelona
+    110: { ml: [1.18, 4.90], open: [1.17, 5.20] }, // Panathinaikos – FC Barcelona
     108: { ml: [1.80, 2.02] }, // LDLC ASVEL – Besiktas
     // later rounds
     160: { ml: [1.50, 2.40] }, // round 16: Panathinaikos – Olympiacos
