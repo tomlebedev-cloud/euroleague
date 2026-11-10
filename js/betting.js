@@ -20,7 +20,9 @@ function save(key, value) {
 }
 
 const betSettings = Object.assign(
-  { bankroll: 100, kelly: 0.25, maxPct: 2, minEdge: 5, modelWeight: 50 },
+  // modelWeight 25: on this season's games with published prices the bookmaker has predicted better than the
+  // model (backtest.py --market), so the bookmaker's price counts three times as much as the model's.
+  { bankroll: 100, kelly: 0.25, maxPct: 2, minEdge: 5, modelWeight: 25 },
   load("bets.settings", {}));
 // odds published with the site (js/odds.js) are used for games you haven't typed odds for
 const published = typeof BOOK_ODDS !== "undefined" ? BOOK_ODDS : { games: {} };
